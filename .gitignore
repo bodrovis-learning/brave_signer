@@ -1,0 +1,4 @@
+*.pem
+*.sig
+example.txt
+dist/
