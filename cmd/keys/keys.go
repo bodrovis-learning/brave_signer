@@ -6,8 +6,8 @@ import (
 
 var keysCmd = &cobra.Command{
 	Use:   "keys",
-	Short: "",
-	Long:  ``,
+	Short: "Manage key pairs.",
+	Long:  `Use subcommands to create public/private key pairs in PEM files.`,
 }
 
 func Init(rootCmd *cobra.Command) {

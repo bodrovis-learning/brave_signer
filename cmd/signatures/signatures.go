@@ -6,8 +6,8 @@ import (
 
 var signaturesCmd = &cobra.Command{
 	Use:   "signatures",
-	Short: "",
-	Long:  ``,
+	Short: "Create and verify signatures.",
+	Long:  `Use subcommands to create signature (.sig) with private key and verify signature with public key.`,
 }
 
 func Init(rootCmd *cobra.Command) {

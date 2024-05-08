@@ -2,3 +2,4 @@
 *.sig
 example.txt
 dist/
+*.exe
