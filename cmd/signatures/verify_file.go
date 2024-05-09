@@ -17,13 +17,14 @@ func init() {
 
 	signaturesVerifyFileCmd.Flags().String("pub-key", "pub_key.pem", "Path to the public key")
 	signaturesVerifyFileCmd.Flags().String("file", "", "Path to the file that should be verified")
-	signaturesVerifyFileCmd.MarkFlagRequired("file")
+	err := signaturesVerifyFileCmd.MarkFlagRequired("file")
+	utils.HaltOnErr(err)
 }
 
 var signaturesVerifyFileCmd = &cobra.Command{
 	Use:   "verifyfile",
-	Short: "Verify the signature of a file",
-	Long:  `This command verifies the digital signature of a specified file using an RSA public key and the signature file.`,
+	Short: "Verify the signature of a file.",
+	Long:  `Verify the digital signature of a specified file using an RSA public key and the signature file. The signature file should have the same basename as the actual file and be stored in the same directory.`,
 	Run: func(cmd *cobra.Command, args []string) {
 		pubPath, err := cmd.Flags().GetString("pub-key")
 		utils.HaltOnErr(err)
@@ -57,7 +58,7 @@ func verifyFileSignature(publicKey *rsa.PublicKey, digest []byte, signature []by
 		SaltLength: rsa.PSSSaltLengthAuto,
 	})
 	if err != nil {
-		return fmt.Errorf("could not verify: %w", err)
+		return fmt.Errorf("signature verification failed: %w", err)
 	}
 
 	return nil

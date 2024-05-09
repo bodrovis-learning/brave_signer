@@ -10,6 +10,7 @@ var signaturesCmd = &cobra.Command{
 	Long:  `Use subcommands to create signature (.sig) with private key and verify signature with public key.`,
 }
 
+// Init initializes signatures commands
 func Init(rootCmd *cobra.Command) {
 	rootCmd.AddCommand(signaturesCmd)
 }

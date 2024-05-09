@@ -2,16 +2,14 @@ package keys
 
 import (
 	"brave_signer/utils"
-	"crypto/aes"
-	"crypto/cipher"
+
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/x509"
+	"encoding/base64"
 	"encoding/pem"
 	"fmt"
 	"github.com/spf13/cobra"
-	"golang.org/x/crypto/argon2"
-	"golang.org/x/term"
 	"os"
 	"path/filepath"
 )
@@ -26,7 +24,7 @@ func init() {
 var keysGenerateCmd = &cobra.Command{
 	Use:   "generate",
 	Short: "Generates key pair.",
-	Long:  `This command generates public and private keys and stores them into PEM file.`,
+	Long:  `Generate an RSA key pair and store it in PEM files. The private key will be encrypted using a passphrase that you'll need to enter. AES encryption with Argon2 key derivation function is utilized.`,
 	Run: func(cmd *cobra.Command, args []string) {
 		pubPath, pubErr := cmd.Flags().GetString("pub-out")
 		utils.HaltOnErr(pubErr)
@@ -36,7 +34,8 @@ var keysGenerateCmd = &cobra.Command{
 		privateKey, err := generatePrivKey(privPath)
 		utils.HaltOnErr(err)
 
-		generatePubKey(pubPath, privateKey)
+		err = generatePubKey(pubPath, privateKey)
+		utils.HaltOnErr(err)
 	},
 }
 
@@ -51,80 +50,66 @@ func generatePrivKey(path string) (*rsa.PrivateKey, error) {
 		return nil, fmt.Errorf("failed to generate private key: %w", err)
 	}
 
-	println("Enter passphrase:")
-	oldState, err := term.MakeRaw(int(os.Stdin.Fd()))
-
+	passphrase, err := utils.GetPassphrase()
 	if err != nil {
-		return nil, fmt.Errorf("failed to grab passphrase: %w", err)
+		return nil, err
 	}
-
-	passphrase, err := term.ReadPassword(int(os.Stdin.Fd()))
-	if err != nil {
-		return nil, fmt.Errorf("failed to grab passphrase: %w", err)
-	}
-	defer term.Restore(int(os.Stdin.Fd()), oldState)
 
 	// Marshal the private key to DER format
 	privateKeyBytes := x509.MarshalPKCS1PrivateKey(privateKey)
 
-	// Generate a salt for the key derivation
-	salt := make([]byte, 16)
-	if _, err := rand.Read(salt); err != nil {
-		panic(err)
+	salt, err := utils.MakeSalt()
+	if err != nil {
+		return nil, err
 	}
 
-	// Derive a key using Argon2
-	key := argon2.IDKey([]byte(passphrase), salt, 1, 64*1024, 4, 32)
+	key := utils.DeriveKey(passphrase, salt)
 
-	// Create an AES cipher using the derived key
-	block, err := aes.NewCipher(key)
+	crypter, err := utils.MakeCrypter(key)
 	if err != nil {
-		panic(err)
-	}
-
-	// Wrap the cipher block in GCM mode
-	aesgcm, err := cipher.NewGCM(block)
-	if err != nil {
-		panic(err)
+		return nil, err
 	}
 
 	// Create a nonce for AES-GCM
-	nonce := make([]byte, aesgcm.NonceSize())
-	if _, err := rand.Read(nonce); err != nil {
-		panic(err)
+	nonce, err := utils.MakeNonce(crypter)
+	if err != nil {
+		return nil, err
 	}
 
 	// Encrypt the private key
-	encryptedData := aesgcm.Seal(nil, nonce, privateKeyBytes, nil)
+	encryptedData := crypter.Seal(nil, nonce, privateKeyBytes, nil)
 
 	// Create a PEM block with the encrypted data
 	encryptedPEMBlock := &pem.Block{
 		Type:  "ENCRYPTED PRIVATE KEY",
 		Bytes: encryptedData,
 		Headers: map[string]string{
-			"Nonce":                   string(nonce),
-			"Salt":                    string(salt),
+			"Nonce":                   base64.StdEncoding.EncodeToString(nonce),
+			"Salt":                    base64.StdEncoding.EncodeToString(salt),
 			"Key-Derivation-Function": "Argon2",
 		},
 	}
 
-	// privBytes := x509.MarshalPKCS1PrivateKey(privateKey)
-	// privPEM := pem.Block{
-	// 	Type:  "RSA PRIVATE KEY",
-	// 	Bytes: privBytes,
-	// }
+	err = savePrivKeyToPEM(absPath, encryptedPEMBlock)
+	if err != nil {
+		return nil, err
+	}
 
+	return privateKey, nil
+}
+
+func savePrivKeyToPEM(absPath string, encryptedPEMBlock *pem.Block) error {
 	privKeyFile, err := os.Create(absPath)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create private key file: %w", err)
+		return fmt.Errorf("failed to create private key file: %w", err)
 	}
 	defer privKeyFile.Close()
 
 	if err := pem.Encode(privKeyFile, encryptedPEMBlock); err != nil {
-		return nil, fmt.Errorf("failed to encode private key to PEM: %w", err)
+		return fmt.Errorf("failed to encode private key to PEM: %w", err)
 	}
 
-	return privateKey, nil
+	return nil
 }
 
 func generatePubKey(path string, privKey *rsa.PrivateKey) error {
