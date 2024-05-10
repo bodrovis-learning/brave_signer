@@ -1,15 +1,19 @@
 package signatures
 
 import (
-	"brave_signer/utils"
+	"bytes"
 	"crypto"
 	"crypto/rsa"
 	"crypto/x509"
+	"encoding/binary"
 	"encoding/pem"
 	"fmt"
-	"github.com/spf13/cobra"
 	"os"
 	"path/filepath"
+
+	"brave_signer/utils"
+
+	"github.com/spf13/cobra"
 )
 
 func init() {
@@ -40,28 +44,48 @@ var signaturesVerifyFileCmd = &cobra.Command{
 		publicKey, err := loadPublicKey(fullPubKeyPath)
 		utils.HaltOnErr(err)
 
-		signature, err := readSignature(fullFilePath)
+		signatureRaw, err := readSignature(fullFilePath)
 		utils.HaltOnErr(err)
 
 		digest, err := hashFile(fullFilePath)
 		utils.HaltOnErr(err)
 
-		err = verifyFileSignature(publicKey, digest, signature)
+		signerInfo, err := verifyFileSignature(publicKey, digest, signatureRaw)
 		utils.HaltOnErr(err)
 
 		fmt.Println("Verification successful!")
+		fmt.Printf("Signer info:\n%s\n", signerInfo)
 	},
 }
 
-func verifyFileSignature(publicKey *rsa.PublicKey, digest []byte, signature []byte) error {
+func verifyFileSignature(publicKey *rsa.PublicKey, digest []byte, signatureRaw []byte) ([]byte, error) {
+	buf := bytes.NewReader(signatureRaw)
+
+	var nameLength uint32
+	if err := binary.Read(buf, binary.BigEndian, &nameLength); err != nil {
+		return nil, fmt.Errorf("failed to read signer info length: %w", err)
+	}
+
+	// Read the signer info
+	signerInfo := make([]byte, nameLength)
+	if _, err := buf.Read(signerInfo); err != nil {
+		return nil, fmt.Errorf("failed to read signer info: %w", err)
+	}
+
+	// The rest of the buffer is the signature
+	signature := make([]byte, buf.Len())
+	if _, err := buf.Read(signature); err != nil {
+		return nil, fmt.Errorf("failed to read signature: %w", err)
+	}
+
 	err := rsa.VerifyPSS(publicKey, crypto.SHA3_256, digest, signature, &rsa.PSSOptions{
 		SaltLength: rsa.PSSSaltLengthAuto,
 	})
 	if err != nil {
-		return fmt.Errorf("signature verification failed: %w", err)
+		return nil, fmt.Errorf("signature verification failed: %w", err)
 	}
 
-	return nil
+	return signerInfo, nil
 }
 
 func readSignature(initialFilePath string) ([]byte, error) {

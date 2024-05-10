@@ -1,18 +1,22 @@
 package signatures
 
 import (
-	"brave_signer/utils"
+	"bytes"
 	"crypto"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/x509"
 	"encoding/base64"
+	"encoding/binary"
 	"encoding/pem"
 	"errors"
 	"fmt"
-	"github.com/spf13/cobra"
 	"os"
 	"path/filepath"
+
+	"brave_signer/utils"
+
+	"github.com/spf13/cobra"
 )
 
 func init() {
@@ -21,6 +25,10 @@ func init() {
 	signaturesSignFileCmd.Flags().String("priv-key", "priv_key.pem", "Path to your private key")
 	signaturesSignFileCmd.Flags().String("file", "", "Path to the file that should be signed")
 	err := signaturesSignFileCmd.MarkFlagRequired("file")
+	utils.HaltOnErr(err)
+
+	signaturesSignFileCmd.Flags().String("signer-id", "", "Signer's name or identifier")
+	err = signaturesSignFileCmd.MarkFlagRequired("signer-id")
 	utils.HaltOnErr(err)
 }
 
@@ -33,6 +41,19 @@ var signaturesSignFileCmd = &cobra.Command{
 		utils.HaltOnErr(err)
 		filePath, err := cmd.Flags().GetString("file")
 		utils.HaltOnErr(err)
+		signerId, err := cmd.Flags().GetString("signer-id")
+		utils.HaltOnErr(err)
+
+		const (
+			minSignerInfoLength = 1
+			maxSignerInfoLength = 65535
+		)
+
+		if len(signerId) < minSignerInfoLength || len(signerId) > maxSignerInfoLength {
+			utils.HaltOnErr(
+				fmt.Errorf("signer information should be between %d and %d characters", minSignerInfoLength, maxSignerInfoLength),
+			)
+		}
 
 		fullFilePath, err := utils.ProcessFilePath(filePath)
 		utils.HaltOnErr(err)
@@ -49,12 +70,37 @@ var signaturesSignFileCmd = &cobra.Command{
 		signature, err := signDigest(digest, privateKey)
 		utils.HaltOnErr(err)
 
-		err = writeSignatureToFile(signature, fullFilePath)
+		signaturePackage, err := makeSignaturePackage(signature, signerId)
+		utils.HaltOnErr(err)
+
+		err = writeSignatureToFile(signaturePackage, fullFilePath)
 		utils.HaltOnErr(err)
 	},
 }
 
-func writeSignatureToFile(signature []byte, initialFilePath string) error {
+func makeSignaturePackage(signature []byte, signerInfo string) ([]byte, error) {
+	// Prepare a buffer to hold the binary data
+	var buf bytes.Buffer
+
+	// Write the length of the signer info as a uint32
+	if err := binary.Write(&buf, binary.BigEndian, uint32(len(signerInfo))); err != nil {
+		return nil, err
+	}
+
+	// Write the signer info string
+	if _, err := buf.WriteString(signerInfo); err != nil {
+		return nil, err
+	}
+
+	// Write the signature
+	if _, err := buf.Write(signature); err != nil {
+		return nil, err
+	}
+
+	return buf.Bytes(), nil
+}
+
+func writeSignatureToFile(signaturePackage []byte, initialFilePath string) error {
 	dir := filepath.Dir(initialFilePath)
 	baseName := filepath.Base(initialFilePath)
 	extension := filepath.Ext(baseName)
@@ -62,7 +108,7 @@ func writeSignatureToFile(signature []byte, initialFilePath string) error {
 
 	sigFilePath := filepath.Join(dir, nameWithoutExt+".sig")
 
-	return os.WriteFile(sigFilePath, signature, 0644)
+	return os.WriteFile(sigFilePath, signaturePackage, 0o644)
 }
 
 func signDigest(digest []byte, privateKey *rsa.PrivateKey) ([]byte, error) {

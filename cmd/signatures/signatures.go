@@ -1,8 +1,18 @@
 package signatures
 
 import (
+	"fmt"
+	"io"
+	"os"
+
 	"github.com/spf13/cobra"
+	"golang.org/x/crypto/sha3"
 )
+
+type SignatureData struct {
+	Signature []byte `json:"signature"`
+	Signer    string `json:"signer"`
+}
 
 var signaturesCmd = &cobra.Command{
 	Use:   "signatures",
@@ -13,4 +23,20 @@ var signaturesCmd = &cobra.Command{
 // Init initializes signatures commands
 func Init(rootCmd *cobra.Command) {
 	rootCmd.AddCommand(signaturesCmd)
+}
+
+func hashFile(filePath string) ([]byte, error) {
+	file, err := os.Open(filePath)
+	if err != nil {
+		return nil, fmt.Errorf("unable to open file %s: %w", filePath, err)
+	}
+	defer file.Close()
+
+	hasher := sha3.New256()
+
+	if _, err := io.Copy(hasher, file); err != nil {
+		return nil, fmt.Errorf("error while hashing file %s: %w", filePath, err)
+	}
+
+	return hasher.Sum(nil), nil
 }

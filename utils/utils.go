@@ -2,10 +2,11 @@ package utils
 
 import (
 	"fmt"
-	"golang.org/x/term"
 	"log"
 	"os"
 	"path/filepath"
+
+	"golang.org/x/term"
 )
 
 var errorLogger = log.New(os.Stderr, "ERROR: ", log.LstdFlags|log.Lshortfile)

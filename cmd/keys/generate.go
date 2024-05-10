@@ -1,17 +1,18 @@
 package keys
 
 import (
-	"brave_signer/utils"
-
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/x509"
 	"encoding/base64"
 	"encoding/pem"
 	"fmt"
-	"github.com/spf13/cobra"
 	"os"
 	"path/filepath"
+
+	"brave_signer/utils"
+
+	"github.com/spf13/cobra"
 )
 
 func init() {
