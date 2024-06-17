@@ -2,55 +2,13 @@ package utils
 
 import (
 	"fmt"
-	"log"
 	"os"
 	"path/filepath"
 
 	"golang.org/x/term"
+
+	"brave_signer/logger"
 )
-
-var errorLogger = log.New(os.Stderr, "ERROR: ", log.LstdFlags|log.Lshortfile)
-
-func safeRestore(fd int, state *term.State) {
-	if err := term.Restore(fd, state); err != nil {
-		// Handle the error, e.g., log it, return it if you're in a function that returns an error, etc.
-		HaltOnErr(fmt.Errorf("failed to restore terminal state: %v", err))
-	}
-}
-
-// GetPassphrase prompts the user for a passphrase and securely reads it.
-func GetPassphrase() ([]byte, error) {
-	fmt.Println("Enter passphrase:")
-
-	oldState, err := term.MakeRaw(int(os.Stdin.Fd()))
-	if err != nil {
-		return nil, fmt.Errorf("failed to grab passphrase: %w", err)
-	}
-
-	defer safeRestore(int(os.Stdin.Fd()), oldState)
-
-	passphrase, err := term.ReadPassword(int(os.Stdin.Fd()))
-	if err != nil {
-		return nil, fmt.Errorf("failed to grab passphrase: %w", err)
-	}
-
-	return passphrase, nil
-}
-
-// HaltOnErr logs an error and exits if the error is non-nil.
-func HaltOnErr(err error, messages ...string) {
-	if err != nil {
-		message := "An error occurred"
-
-		if len(messages) > 0 && messages[0] != "" {
-			message = messages[0]
-		}
-
-		errorLogger.Printf("%s: %v", message, err)
-
-		os.Exit(1)
-	}
-}
 
 // ProcessFilePath converts a given path to an absolute path and verifies it points to a regular file.
 func ProcessFilePath(path string) (string, error) {
@@ -72,4 +30,29 @@ func ProcessFilePath(path string) (string, error) {
 	}
 
 	return absolutePath, nil
+}
+
+// GetPassphrase prompts the user for a passphrase and securely reads it.
+func GetPassphrase() ([]byte, error) {
+	fmt.Println("Enter passphrase:")
+
+	oldState, err := term.MakeRaw(int(os.Stdin.Fd()))
+	if err != nil {
+		return nil, fmt.Errorf("failed to set terminal to raw mode: %w", err)
+	}
+	defer safeRestore(int(os.Stdin.Fd()), oldState)
+
+	passphrase, err := term.ReadPassword(int(os.Stdin.Fd()))
+	if err != nil {
+		return nil, fmt.Errorf("failed to read passphrase: %w", err)
+	}
+
+	return passphrase, nil
+}
+
+// safeRestore attempts to restore the terminal to its original state and logs an error if it fails.
+func safeRestore(fd int, state *term.State) {
+	if err := term.Restore(fd, state); err != nil {
+		logger.HaltOnErr(fmt.Errorf("failed to restore terminal state: %v", err), "Terminal restoration failed")
+	}
 }

@@ -10,16 +10,43 @@ import (
 	"os"
 	"path/filepath"
 
+	"brave_signer/config"
+	"brave_signer/crypto_utils"
+	"brave_signer/logger"
 	"brave_signer/utils"
 
 	"github.com/spf13/cobra"
+	"github.com/spf13/viper"
 )
+
+type PrivateKeyGen struct {
+	outputPath   string
+	keyBitSize   int
+	saltSize     int
+	time         uint32
+	memory       uint32
+	threads      uint8
+	argon2KeyLen uint32
+}
 
 func init() {
 	keysCmd.AddCommand(keysGenerateCmd)
 
+	// Configuration flags setup
 	keysGenerateCmd.Flags().String("pub-out", "pub_key.pem", "Path to save the public key")
 	keysGenerateCmd.Flags().String("priv-out", "priv_key.pem", "Path to save the private key")
+	keysGenerateCmd.Flags().Int("priv-size", 2048, "Private key size in bits")
+	keysGenerateCmd.Flags().Int("salt-size", 16, "Salt size used in key derivation in bytes")
+	keysGenerateCmd.Flags().Uint32("argon2-time", 1, "Time parameter used in Argon2id")
+	keysGenerateCmd.Flags().Uint32("argon2-memory", 64, "Memory parameter (megabytes) used in Argon2id")
+	keysGenerateCmd.Flags().Uint8("argon2-threads", 4, "Threads parameter used in Argon2id")
+	keysGenerateCmd.Flags().Uint32("argon2-key-len", 32, "Key length parameter used in Argon2id")
+
+	err := config.LoadYamlConfig(keysGenerateCmd)
+	logger.HaltOnErr(err, "can't load config")
+
+	err = config.BindFlags(keysGenerateCmd)
+	logger.HaltOnErr(err, "can't process config")
 }
 
 var keysGenerateCmd = &cobra.Command{
@@ -27,26 +54,31 @@ var keysGenerateCmd = &cobra.Command{
 	Short: "Generates key pair.",
 	Long:  `Generate an RSA key pair and store it in PEM files. The private key will be encrypted using a passphrase that you'll need to enter. AES encryption with Argon2 key derivation function is utilized.`,
 	Run: func(cmd *cobra.Command, args []string) {
-		pubPath, pubErr := cmd.Flags().GetString("pub-out")
-		utils.HaltOnErr(pubErr)
-		privPath, privErr := cmd.Flags().GetString("priv-out")
-		utils.HaltOnErr(privErr)
+		pkGenConfig := PrivateKeyGen{
+			outputPath:   viper.GetString("priv-out"),
+			keyBitSize:   viper.GetInt("priv-size"),
+			saltSize:     viper.GetInt("salt-size"),
+			time:         viper.GetUint32("argon2-time"),
+			memory:       viper.GetUint32("argon2-memory"),
+			threads:      uint8(viper.GetUint("argon2-threads")),
+			argon2KeyLen: viper.GetUint32("argon2-key-len"),
+		}
 
-		privateKey, err := generatePrivKey(privPath)
-		utils.HaltOnErr(err)
+		privateKey, err := generatePrivKey(pkGenConfig)
+		logger.HaltOnErr(err)
 
-		err = generatePubKey(pubPath, privateKey)
-		utils.HaltOnErr(err)
+		err = generatePubKey(viper.GetString("pub-out"), privateKey)
+		logger.HaltOnErr(err)
 	},
 }
 
-func generatePrivKey(path string) (*rsa.PrivateKey, error) {
-	absPath, err := filepath.Abs(path)
+func generatePrivKey(pkGenConfig PrivateKeyGen) (*rsa.PrivateKey, error) {
+	absPath, err := filepath.Abs(pkGenConfig.outputPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get absolute path: %w", err)
 	}
 
-	privateKey, err := rsa.GenerateKey(rand.Reader, 2048)
+	privateKey, err := rsa.GenerateKey(rand.Reader, pkGenConfig.keyBitSize)
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate private key: %w", err)
 	}
@@ -59,20 +91,28 @@ func generatePrivKey(path string) (*rsa.PrivateKey, error) {
 	// Marshal the private key to DER format
 	privateKeyBytes := x509.MarshalPKCS1PrivateKey(privateKey)
 
-	salt, err := utils.MakeSalt()
+	salt, err := makeSalt(pkGenConfig.saltSize)
 	if err != nil {
 		return nil, err
 	}
 
-	key := utils.DeriveKey(passphrase, salt)
+	key, err := crypto_utils.DeriveKey(crypto_utils.KeyDerivationConfig{
+		Passphrase: passphrase,
+		Salt:       salt,
+		Time:       pkGenConfig.time,
+		Memory:     pkGenConfig.memory,
+		KeyLen:     pkGenConfig.argon2KeyLen,
+		Threads:    pkGenConfig.threads,
+	})
+	logger.HaltOnErr(err)
 
-	crypter, err := utils.MakeCrypter(key)
+	crypter, err := crypto_utils.MakeCrypter(key)
 	if err != nil {
 		return nil, err
 	}
 
 	// Create a nonce for AES-GCM
-	nonce, err := utils.MakeNonce(crypter)
+	nonce, err := crypto_utils.MakeNonce(crypter)
 	if err != nil {
 		return nil, err
 	}
@@ -119,27 +159,30 @@ func generatePubKey(path string, privKey *rsa.PrivateKey) error {
 		return fmt.Errorf("failed to get absolute path: %w", err)
 	}
 
-	publicKey := &privKey.PublicKey
-
-	pubASN1, err := x509.MarshalPKIXPublicKey(publicKey)
+	pubASN1, err := x509.MarshalPKIXPublicKey(&privKey.PublicKey)
 	if err != nil {
-		return err
-	}
-
-	pubPEM := pem.Block{
-		Type:  "RSA PUBLIC KEY",
-		Bytes: pubASN1,
+		return fmt.Errorf("failed to marshal public key: %w", err)
 	}
 
 	file, err := os.Create(absPath)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to create public key file: %w", err)
 	}
 	defer file.Close()
 
-	if err := pem.Encode(file, &pubPEM); err != nil {
-		return err
+	if err := pem.Encode(file, &pem.Block{Type: "RSA PUBLIC KEY", Bytes: pubASN1}); err != nil {
+		return fmt.Errorf("failed to encode public key to PEM: %w", err)
 	}
 
 	return nil
+}
+
+// makeSalt generates a cryptographic salt.
+func makeSalt(saltSize int) ([]byte, error) {
+	salt := make([]byte, saltSize)
+	if _, err := rand.Read(salt); err != nil {
+		return nil, fmt.Errorf("failed to generate salt: %v", err)
+	}
+
+	return salt, nil
 }

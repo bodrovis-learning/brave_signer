@@ -4,7 +4,7 @@ import (
 	"brave_signer/cmd"
 	"brave_signer/cmd/keys"
 	"brave_signer/cmd/signatures"
-	"brave_signer/utils"
+	"brave_signer/logger"
 )
 
 func main() {
@@ -13,6 +13,6 @@ func main() {
 	signatures.Init(rootCmd)
 
 	if err := rootCmd.Execute(); err != nil {
-		utils.HaltOnErr(err, "Initial setup failed")
+		logger.HaltOnErr(err, "Initial setup failed")
 	}
 }

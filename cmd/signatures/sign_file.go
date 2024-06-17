@@ -14,22 +14,41 @@ import (
 	"os"
 	"path/filepath"
 
+	"brave_signer/config"
+	"brave_signer/crypto_utils"
+	"brave_signer/logger"
 	"brave_signer/utils"
 
 	"github.com/spf13/cobra"
+	"github.com/spf13/viper"
 )
+
+type PkLoadConfig struct {
+	pkPath       string
+	time         uint32
+	memory       uint32
+	threads      uint8
+	argon2KeyLen uint32
+}
 
 func init() {
 	signaturesCmd.AddCommand(signaturesSignFileCmd)
 
 	signaturesSignFileCmd.Flags().String("priv-key", "priv_key.pem", "Path to your private key")
 	signaturesSignFileCmd.Flags().String("file", "", "Path to the file that should be signed")
-	err := signaturesSignFileCmd.MarkFlagRequired("file")
-	utils.HaltOnErr(err)
 
 	signaturesSignFileCmd.Flags().String("signer-id", "", "Signer's name or identifier")
-	err = signaturesSignFileCmd.MarkFlagRequired("signer-id")
-	utils.HaltOnErr(err)
+
+	signaturesSignFileCmd.Flags().Uint32("argon2-time", 1, "Time parameter used in Argon2id")
+	signaturesSignFileCmd.Flags().Uint32("argon2-memory", 64, "Memory parameter (megabytes) used in Argon2id")
+	signaturesSignFileCmd.Flags().Uint8("argon2-threads", 4, "Threads parameter used in Argon2id")
+	signaturesSignFileCmd.Flags().Uint32("argon2-key-len", 32, "Key length parameter used in Argon2id")
+
+	err := config.LoadYamlConfig(signaturesSignFileCmd)
+	logger.HaltOnErr(err, "can't load config")
+
+	err = config.BindFlags(signaturesSignFileCmd)
+	logger.HaltOnErr(err, "can't process config")
 }
 
 var signaturesSignFileCmd = &cobra.Command{
@@ -37,12 +56,7 @@ var signaturesSignFileCmd = &cobra.Command{
 	Short: "Sign the file.",
 	Long:  `Sign the specified file using an RSA private key and store the signature inside a .sig file named after the original file. You'll be asked for a passphrase to decrypt the private key.`,
 	Run: func(cmd *cobra.Command, args []string) {
-		privPath, err := cmd.Flags().GetString("priv-key")
-		utils.HaltOnErr(err)
-		filePath, err := cmd.Flags().GetString("file")
-		utils.HaltOnErr(err)
-		signerId, err := cmd.Flags().GetString("signer-id")
-		utils.HaltOnErr(err)
+		signerId := viper.GetString("signer-id")
 
 		const (
 			minSignerInfoLength = 1
@@ -50,64 +64,59 @@ var signaturesSignFileCmd = &cobra.Command{
 		)
 
 		if len(signerId) < minSignerInfoLength || len(signerId) > maxSignerInfoLength {
-			utils.HaltOnErr(
+			logger.HaltOnErr(
 				fmt.Errorf("signer information should be between %d and %d characters", minSignerInfoLength, maxSignerInfoLength),
 			)
 		}
 
-		fullFilePath, err := utils.ProcessFilePath(filePath)
-		utils.HaltOnErr(err)
+		fullFilePath, err := utils.ProcessFilePath(viper.GetString("file"))
+		logger.HaltOnErr(err)
 
-		fullPrivKeyPath, err := utils.ProcessFilePath(privPath)
-		utils.HaltOnErr(err)
+		fullPrivKeyPath, err := utils.ProcessFilePath(viper.GetString("priv-key"))
+		logger.HaltOnErr(err)
 
-		privateKey, err := loadPrivateKey(fullPrivKeyPath)
-		utils.HaltOnErr(err)
+		privateKey, err := loadPrivateKey(PkLoadConfig{
+			pkPath:       fullPrivKeyPath,
+			time:         viper.GetUint32("argon2-time"),
+			memory:       viper.GetUint32("argon2-memory"),
+			threads:      uint8(viper.GetUint("argon2-threads")),
+			argon2KeyLen: viper.GetUint32("argon2-key-len"),
+		})
+		logger.HaltOnErr(err)
 
 		digest, err := hashFile(fullFilePath)
-		utils.HaltOnErr(err)
+		logger.HaltOnErr(err)
 
 		signature, err := signDigest(digest, privateKey)
-		utils.HaltOnErr(err)
+		logger.HaltOnErr(err)
 
 		signaturePackage, err := makeSignaturePackage(signature, signerId)
-		utils.HaltOnErr(err)
+		logger.HaltOnErr(err)
 
 		err = writeSignatureToFile(signaturePackage, fullFilePath)
-		utils.HaltOnErr(err)
+		logger.HaltOnErr(err)
 	},
 }
 
 func makeSignaturePackage(signature []byte, signerInfo string) ([]byte, error) {
-	// Prepare a buffer to hold the binary data
 	var buf bytes.Buffer
-
-	// Write the length of the signer info as a uint32
 	if err := binary.Write(&buf, binary.BigEndian, uint32(len(signerInfo))); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to write signer info length: %v", err)
 	}
 
-	// Write the signer info string
 	if _, err := buf.WriteString(signerInfo); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to write signer info: %v", err)
 	}
 
-	// Write the signature
 	if _, err := buf.Write(signature); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to write signature: %v", err)
 	}
 
 	return buf.Bytes(), nil
 }
 
 func writeSignatureToFile(signaturePackage []byte, initialFilePath string) error {
-	dir := filepath.Dir(initialFilePath)
-	baseName := filepath.Base(initialFilePath)
-	extension := filepath.Ext(baseName)
-	nameWithoutExt := baseName[:len(baseName)-len(extension)]
-
-	sigFilePath := filepath.Join(dir, nameWithoutExt+".sig")
-
+	sigFilePath := filepath.Join(filepath.Dir(initialFilePath), filepath.Base(initialFilePath)+".sig")
 	return os.WriteFile(sigFilePath, signaturePackage, 0o644)
 }
 
@@ -163,8 +172,8 @@ func getSaltAndNonce(block *pem.Block) ([]byte, []byte, error) {
 	return nonce, salt, nil
 }
 
-func loadPrivateKey(pkPath string) (*rsa.PrivateKey, error) {
-	block, err := decodePEMFile(pkPath)
+func loadPrivateKey(config PkLoadConfig) (*rsa.PrivateKey, error) {
+	block, err := decodePEMFile(config.pkPath)
 	if err != nil {
 		return nil, err
 	}
@@ -180,9 +189,17 @@ func loadPrivateKey(pkPath string) (*rsa.PrivateKey, error) {
 	}
 
 	// Derive the key from the passphrase and salt
-	key := utils.DeriveKey(passphrase, []byte(salt))
+	key, err := crypto_utils.DeriveKey(crypto_utils.KeyDerivationConfig{
+		Passphrase: passphrase,
+		Salt:       salt,
+		Time:       config.time,
+		Memory:     config.memory,
+		KeyLen:     config.argon2KeyLen,
+		Threads:    config.threads,
+	})
+	logger.HaltOnErr(err)
 
-	crypter, err := utils.MakeCrypter(key)
+	crypter, err := crypto_utils.MakeCrypter(key)
 	if err != nil {
 		return nil, err
 	}

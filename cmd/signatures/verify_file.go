@@ -11,9 +11,12 @@ import (
 	"os"
 	"path/filepath"
 
+	"brave_signer/config"
+	"brave_signer/logger"
 	"brave_signer/utils"
 
 	"github.com/spf13/cobra"
+	"github.com/spf13/viper"
 )
 
 func init() {
@@ -21,8 +24,12 @@ func init() {
 
 	signaturesVerifyFileCmd.Flags().String("pub-key", "pub_key.pem", "Path to the public key")
 	signaturesVerifyFileCmd.Flags().String("file", "", "Path to the file that should be verified")
-	err := signaturesVerifyFileCmd.MarkFlagRequired("file")
-	utils.HaltOnErr(err)
+
+	err := config.LoadYamlConfig(signaturesVerifyFileCmd)
+	logger.HaltOnErr(err, "can't load config")
+
+	err = config.BindFlags(signaturesVerifyFileCmd)
+	logger.HaltOnErr(err, "can't process config")
 }
 
 var signaturesVerifyFileCmd = &cobra.Command{
@@ -30,28 +37,23 @@ var signaturesVerifyFileCmd = &cobra.Command{
 	Short: "Verify the signature of a file.",
 	Long:  `Verify the digital signature of a specified file using an RSA public key and the signature file. The signature file should have the same basename as the actual file and be stored in the same directory.`,
 	Run: func(cmd *cobra.Command, args []string) {
-		pubPath, err := cmd.Flags().GetString("pub-key")
-		utils.HaltOnErr(err)
-		filePath, err := cmd.Flags().GetString("file")
-		utils.HaltOnErr(err)
+		fullFilePath, err := utils.ProcessFilePath(viper.GetString("file"))
+		logger.HaltOnErr(err)
 
-		fullFilePath, err := utils.ProcessFilePath(filePath)
-		utils.HaltOnErr(err)
-
-		fullPubKeyPath, err := utils.ProcessFilePath(pubPath)
-		utils.HaltOnErr(err)
+		fullPubKeyPath, err := utils.ProcessFilePath(viper.GetString("pub-key"))
+		logger.HaltOnErr(err)
 
 		publicKey, err := loadPublicKey(fullPubKeyPath)
-		utils.HaltOnErr(err)
+		logger.HaltOnErr(err)
 
 		signatureRaw, err := readSignature(fullFilePath)
-		utils.HaltOnErr(err)
+		logger.HaltOnErr(err)
 
 		digest, err := hashFile(fullFilePath)
-		utils.HaltOnErr(err)
+		logger.HaltOnErr(err)
 
 		signerInfo, err := verifyFileSignature(publicKey, digest, signatureRaw)
-		utils.HaltOnErr(err)
+		logger.HaltOnErr(err)
 
 		fmt.Println("Verification successful!")
 		fmt.Printf("Signer info:\n%s\n", signerInfo)
@@ -63,26 +65,24 @@ func verifyFileSignature(publicKey *rsa.PublicKey, digest []byte, signatureRaw [
 
 	var nameLength uint32
 	if err := binary.Read(buf, binary.BigEndian, &nameLength); err != nil {
-		return nil, fmt.Errorf("failed to read signer info length: %w", err)
+		return nil, fmt.Errorf("failed to read signer info length: %v", err)
 	}
 
 	// Read the signer info
 	signerInfo := make([]byte, nameLength)
 	if _, err := buf.Read(signerInfo); err != nil {
-		return nil, fmt.Errorf("failed to read signer info: %w", err)
+		return nil, fmt.Errorf("failed to read signer info: %v", err)
 	}
 
 	// The rest of the buffer is the signature
 	signature := make([]byte, buf.Len())
 	if _, err := buf.Read(signature); err != nil {
-		return nil, fmt.Errorf("failed to read signature: %w", err)
+		return nil, fmt.Errorf("failed to read signature: %v", err)
 	}
 
-	err := rsa.VerifyPSS(publicKey, crypto.SHA3_256, digest, signature, &rsa.PSSOptions{
-		SaltLength: rsa.PSSSaltLengthAuto,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("signature verification failed: %w", err)
+	opts := &rsa.PSSOptions{SaltLength: rsa.PSSSaltLengthAuto}
+	if err := rsa.VerifyPSS(publicKey, crypto.SHA3_256, digest, signature, opts); err != nil {
+		return nil, fmt.Errorf("signature verification failed: %v", err)
 	}
 
 	return signerInfo, nil
