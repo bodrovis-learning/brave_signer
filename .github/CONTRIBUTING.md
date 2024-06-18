@@ -3,6 +3,12 @@
 Run:
 
 ```
+go run tools\lint\main.go
+```
+
+Or manually:
+
+```
 go fmt ./...
 go vet ./...
 ```
