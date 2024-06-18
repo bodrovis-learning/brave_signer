@@ -10,37 +10,50 @@ import (
 	"github.com/spf13/viper"
 )
 
-// LoadYamlConfig loads and binds configuration from a YAML file
-func LoadYamlConfig(cmd *cobra.Command) error {
-	viper.SetConfigName("config")
-	viper.SetConfigType("yaml")
-	viper.AddConfigPath(".")
+type ContextKey int
 
-	if err := viper.ReadInConfig(); err != nil {
+const ViperKey ContextKey = iota
+
+// LoadYamlConfig loads configuration from a YAML file
+func LoadYamlConfig() (*viper.Viper, error) {
+	localViper := viper.New()
+	localViper.SetConfigName("config")
+	localViper.SetConfigType("yaml")
+	localViper.AddConfigPath(".")
+
+	err := localViper.ReadInConfig()
+	if err != nil {
 		if _, ok := err.(viper.ConfigFileNotFoundError); ok {
-			logger.Info("Config file not found; using default values.")
-			return nil // Returning nil because the absence of a config file might be acceptable.
+			logger.Info("Config file not found, using default settings...")
 		} else {
-			return fmt.Errorf("found config file, but encountered an error: %v", err)
+			return localViper, fmt.Errorf("found config file, but encountered an error: %v", err)
 		}
 	}
-	return nil
+	return localViper, nil
 }
 
-// BindFlags binds Cobra flags to Viper configuration
-func BindFlags(cmd *cobra.Command) error {
-	cmd.Flags().VisitAll(func(flag *pflag.Flag) {
-		if err := viper.BindPFlag(flag.Name, flag); err != nil {
-			logger.Warn(fmt.Errorf("error binding flag '%s': %v", flag.Name, err))
-		}
-	})
+func BindFlags(cmd *cobra.Command, v *viper.Viper) error {
+	var firstErr error
 
 	cmd.Flags().VisitAll(func(flag *pflag.Flag) {
-		if !flag.Changed && viper.IsSet(flag.Name) {
-			if err := cmd.Flags().Set(flag.Name, viper.GetString(flag.Name)); err != nil {
-				logger.Warn(fmt.Errorf("error setting flag '%s' from config: %v", flag.Name, err))
+		// Bind each flag to Viper
+		if err := v.BindPFlag(flag.Name, flag); err != nil {
+			if firstErr == nil { // Store the first error encountered
+				firstErr = fmt.Errorf("error binding flag '%s': %v", flag.Name, err)
+			}
+			logger.Warn(err)
+		}
+
+		// If the flag hasn't been changed by the CLI, set it from Viper
+		if !flag.Changed && v.IsSet(flag.Name) {
+			if err := cmd.Flags().Set(flag.Name, v.GetString(flag.Name)); err != nil {
+				if firstErr == nil { // Store the first error encountered
+					firstErr = fmt.Errorf("error setting flag '%s' from config: %v", flag.Name, err)
+				}
+				logger.Warn(err)
 			}
 		}
 	})
-	return nil
+
+	return firstErr
 }

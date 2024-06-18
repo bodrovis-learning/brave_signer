@@ -22,41 +22,47 @@ import (
 func init() {
 	signaturesCmd.AddCommand(signaturesVerifyFileCmd)
 
-	signaturesVerifyFileCmd.Flags().String("pub-key", "pub_key.pem", "Path to the public key")
-	signaturesVerifyFileCmd.Flags().String("file", "", "Path to the file that should be verified")
-
-	err := config.LoadYamlConfig(signaturesVerifyFileCmd)
-	logger.HaltOnErr(err, "can't load config")
-
-	err = config.BindFlags(signaturesVerifyFileCmd)
-	logger.HaltOnErr(err, "can't process config")
+	signaturesVerifyFileCmd.Flags().String("pub-key-path", "pub_key.pem", "Path to the public key")
+	signaturesVerifyFileCmd.Flags().String("file-path", "", "Path to the file that should be verified")
 }
 
 var signaturesVerifyFileCmd = &cobra.Command{
 	Use:   "verifyfile",
 	Short: "Verify the signature of a file.",
-	Long:  `Verify the digital signature of a specified file using an RSA public key and the signature file. The signature file should have the same basename as the actual file and be stored in the same directory.`,
+	Long:  `Verify the digital signature of a specified file using an RSA public key. The command expects a signature file named "<original_filename>.sig" located in the same directory as the file being verified. The public key should be in PEM format.`,
 	Run: func(cmd *cobra.Command, args []string) {
-		fullFilePath, err := utils.ProcessFilePath(viper.GetString("file"))
-		logger.HaltOnErr(err)
+		localViper := cmd.Context().Value(config.ViperKey).(*viper.Viper)
 
-		fullPubKeyPath, err := utils.ProcessFilePath(viper.GetString("pub-key"))
-		logger.HaltOnErr(err)
+		logger.Info("Loading public key...")
+
+		fullPubKeyPath, err := utils.ProcessFilePath(localViper.GetString("pub-key-path"))
+		logger.HaltOnErr(err, "failed to process pub key path")
 
 		publicKey, err := loadPublicKey(fullPubKeyPath)
-		logger.HaltOnErr(err)
+		logger.HaltOnErr(err, "cannot load pub key from file")
+
+		logger.Info("Loading file and signature key...")
+
+		fullFilePath, err := utils.ProcessFilePath(localViper.GetString("file-path"))
+		logger.HaltOnErr(err, "failed to process file path")
 
 		signatureRaw, err := readSignature(fullFilePath)
-		logger.HaltOnErr(err)
+		logger.HaltOnErr(err, "cannot read signature")
+
+		logger.Info("Hashing the file...")
 
 		digest, err := hashFile(fullFilePath)
-		logger.HaltOnErr(err)
+		logger.HaltOnErr(err, "cannot hash file")
+
+		logger.Info("Verifying signature...")
 
 		signerInfo, err := verifyFileSignature(publicKey, digest, signatureRaw)
-		logger.HaltOnErr(err)
+		logger.HaltOnErr(err, "cannot verify signature")
 
-		fmt.Println("Verification successful!")
-		fmt.Printf("Signer info:\n%s\n", signerInfo)
+		logger.Info(fmt.Sprintf("Verification successful for file: %s\n", filepath.Base(fullFilePath)))
+		logger.Info(fmt.Sprintf("Verified using public key: %s\n", filepath.Base(fullPubKeyPath)))
+		logger.Info("Hash Algorithm: SHA3-256\n")
+		logger.Info(fmt.Sprintf("Signer info:\n%s\n", signerInfo))
 	},
 }
 
@@ -91,10 +97,8 @@ func verifyFileSignature(publicKey *rsa.PublicKey, digest []byte, signatureRaw [
 func readSignature(initialFilePath string) ([]byte, error) {
 	dir := filepath.Dir(initialFilePath)
 	baseName := filepath.Base(initialFilePath)
-	extension := filepath.Ext(baseName)
-	nameWithoutExt := baseName[:len(baseName)-len(extension)]
 
-	sigFilePath := filepath.Join(dir, nameWithoutExt+".sig")
+	sigFilePath := filepath.Join(dir, baseName+".sig")
 
 	return os.ReadFile(sigFilePath)
 }
@@ -102,7 +106,7 @@ func readSignature(initialFilePath string) ([]byte, error) {
 func loadPublicKey(path string) (*rsa.PublicKey, error) {
 	pemBytes, err := os.ReadFile(path)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to read public key file: %v", err)
 	}
 
 	block, rest := pem.Decode(pemBytes)
@@ -116,7 +120,7 @@ func loadPublicKey(path string) (*rsa.PublicKey, error) {
 
 	pub, err := x509.ParsePKIXPublicKey(block.Bytes)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to parse public key: %v", err)
 	}
 
 	switch pub := pub.(type) {

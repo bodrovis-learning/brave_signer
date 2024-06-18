@@ -14,7 +14,7 @@ import (
 func ProcessFilePath(path string) (string, error) {
 	absolutePath, err := filepath.Abs(path)
 	if err != nil {
-		return "", fmt.Errorf("converting to absolute path: %w", err)
+		return "", fmt.Errorf("converting to absolute path: %v", err)
 	}
 
 	fileInfo, err := os.Stat(absolutePath)
@@ -22,7 +22,7 @@ func ProcessFilePath(path string) (string, error) {
 		if os.IsNotExist(err) {
 			return "", fmt.Errorf("path '%s' does not exist", path)
 		}
-		return "", fmt.Errorf("fetching path info: %w", err)
+		return "", fmt.Errorf("fetching path info: %v", err)
 	}
 
 	if !fileInfo.Mode().IsRegular() {
@@ -38,13 +38,13 @@ func GetPassphrase() ([]byte, error) {
 
 	oldState, err := term.MakeRaw(int(os.Stdin.Fd()))
 	if err != nil {
-		return nil, fmt.Errorf("failed to set terminal to raw mode: %w", err)
+		return nil, fmt.Errorf("failed to set terminal to raw mode: %v", err)
 	}
 	defer safeRestore(int(os.Stdin.Fd()), oldState)
 
 	passphrase, err := term.ReadPassword(int(os.Stdin.Fd()))
 	if err != nil {
-		return nil, fmt.Errorf("failed to read passphrase: %w", err)
+		return nil, fmt.Errorf("failed to read passphrase: %v", err)
 	}
 
 	return passphrase, nil

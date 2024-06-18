@@ -34,67 +34,70 @@ type PkLoadConfig struct {
 func init() {
 	signaturesCmd.AddCommand(signaturesSignFileCmd)
 
-	signaturesSignFileCmd.Flags().String("priv-key", "priv_key.pem", "Path to your private key")
-	signaturesSignFileCmd.Flags().String("file", "", "Path to the file that should be signed")
-
+	signaturesSignFileCmd.Flags().String("priv-key-path", "priv_key.pem", "Path to your private key")
+	signaturesSignFileCmd.Flags().String("file-path", "", "Path to the file that should be signed")
 	signaturesSignFileCmd.Flags().String("signer-id", "", "Signer's name or identifier")
-
 	signaturesSignFileCmd.Flags().Uint32("argon2-time", 1, "Time parameter used in Argon2id")
 	signaturesSignFileCmd.Flags().Uint32("argon2-memory", 64, "Memory parameter (megabytes) used in Argon2id")
 	signaturesSignFileCmd.Flags().Uint8("argon2-threads", 4, "Threads parameter used in Argon2id")
 	signaturesSignFileCmd.Flags().Uint32("argon2-key-len", 32, "Key length parameter used in Argon2id")
+}
 
-	err := config.LoadYamlConfig(signaturesSignFileCmd)
-	logger.HaltOnErr(err, "can't load config")
+func validateSignerID(signerID string) error {
+	const (
+		minSignerInfoLength = 1
+		maxSignerInfoLength = 65535
+	)
 
-	err = config.BindFlags(signaturesSignFileCmd)
-	logger.HaltOnErr(err, "can't process config")
+	if len(signerID) < minSignerInfoLength || len(signerID) > maxSignerInfoLength {
+		return fmt.Errorf("signer information must be between %d and %d characters", minSignerInfoLength, maxSignerInfoLength)
+	}
+	return nil
 }
 
 var signaturesSignFileCmd = &cobra.Command{
 	Use:   "signfile",
 	Short: "Sign the file.",
 	Long:  `Sign the specified file using an RSA private key and store the signature inside a .sig file named after the original file. You'll be asked for a passphrase to decrypt the private key.`,
+	PreRunE: func(cmd *cobra.Command, args []string) error {
+		signerID := cmd.Flag("signer-id").Value.String()
+		return validateSignerID(signerID)
+	},
 	Run: func(cmd *cobra.Command, args []string) {
-		signerId := viper.GetString("signer-id")
+		localViper := cmd.Context().Value(config.ViperKey).(*viper.Viper)
 
-		const (
-			minSignerInfoLength = 1
-			maxSignerInfoLength = 65535
-		)
+		logger.Info("Loading private key...")
 
-		if len(signerId) < minSignerInfoLength || len(signerId) > maxSignerInfoLength {
-			logger.HaltOnErr(
-				fmt.Errorf("signer information should be between %d and %d characters", minSignerInfoLength, maxSignerInfoLength),
-			)
-		}
-
-		fullFilePath, err := utils.ProcessFilePath(viper.GetString("file"))
-		logger.HaltOnErr(err)
-
-		fullPrivKeyPath, err := utils.ProcessFilePath(viper.GetString("priv-key"))
-		logger.HaltOnErr(err)
+		fullPrivKeyPath, err := utils.ProcessFilePath(localViper.GetString("priv-key-path"))
+		logger.HaltOnErr(err, "failed to process priv key path")
 
 		privateKey, err := loadPrivateKey(PkLoadConfig{
 			pkPath:       fullPrivKeyPath,
-			time:         viper.GetUint32("argon2-time"),
-			memory:       viper.GetUint32("argon2-memory"),
-			threads:      uint8(viper.GetUint("argon2-threads")),
-			argon2KeyLen: viper.GetUint32("argon2-key-len"),
+			time:         localViper.GetUint32("argon2-time"),
+			memory:       localViper.GetUint32("argon2-memory"),
+			threads:      uint8(localViper.GetUint("argon2-threads")),
+			argon2KeyLen: localViper.GetUint32("argon2-key-len"),
 		})
-		logger.HaltOnErr(err)
+		logger.HaltOnErr(err, "cannot load priv key from file")
+
+		logger.Info("Hashing the file...")
+
+		fullFilePath, err := utils.ProcessFilePath(localViper.GetString("file-path"))
+		logger.HaltOnErr(err, "failed to process file path")
 
 		digest, err := hashFile(fullFilePath)
-		logger.HaltOnErr(err)
+		logger.HaltOnErr(err, "cannot hash the file")
+
+		logger.Info("Signing the file...")
 
 		signature, err := signDigest(digest, privateKey)
-		logger.HaltOnErr(err)
+		logger.HaltOnErr(err, "cannot sign the file")
 
-		signaturePackage, err := makeSignaturePackage(signature, signerId)
-		logger.HaltOnErr(err)
+		signaturePackage, err := makeSignaturePackage(signature, localViper.GetString("signer-id"))
+		logger.HaltOnErr(err, "cannot make signature package")
 
 		err = writeSignatureToFile(signaturePackage, fullFilePath)
-		logger.HaltOnErr(err)
+		logger.HaltOnErr(err, "cannot write signature to file")
 	},
 }
 
@@ -127,7 +130,7 @@ func signDigest(digest []byte, privateKey *rsa.PrivateKey) ([]byte, error) {
 
 	signature, err := rsa.SignPSS(rand.Reader, privateKey, crypto.SHA3_256, digest, opts)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to sign digest: %v", err)
 	}
 
 	return signature, nil
@@ -136,7 +139,7 @@ func signDigest(digest []byte, privateKey *rsa.PrivateKey) ([]byte, error) {
 func decodePEMFile(pkPath string) (*pem.Block, error) {
 	fileBytes, err := os.ReadFile(pkPath)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to read PEM file: %v", err)
 	}
 
 	block, rest := pem.Decode(fileBytes)
@@ -162,11 +165,11 @@ func getSaltAndNonce(block *pem.Block) ([]byte, []byte, error) {
 
 	nonce, err := base64.StdEncoding.DecodeString(nonceB64)
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to decode nonce: %w", err)
+		return nil, nil, fmt.Errorf("failed to decode nonce: %v", err)
 	}
 	salt, err := base64.StdEncoding.DecodeString(saltB64)
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to decode salt: %w", err)
+		return nil, nil, fmt.Errorf("failed to decode salt: %v", err)
 	}
 
 	return nonce, salt, nil
@@ -201,18 +204,18 @@ func loadPrivateKey(config PkLoadConfig) (*rsa.PrivateKey, error) {
 
 	crypter, err := crypto_utils.MakeCrypter(key)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to make crypter: %v", err)
 	}
 
 	// Decrypt the private key
 	plaintext, err := crypter.Open(nil, []byte(nonce), block.Bytes, nil)
 	if err != nil {
-		return nil, fmt.Errorf("private key file descryption failed: %w", err)
+		return nil, fmt.Errorf("private key file descryption failed: %v", err)
 	}
 
 	privateKey, err := x509.ParsePKCS1PrivateKey(plaintext)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to parse private key: %v", err)
 	}
 
 	return privateKey, nil
