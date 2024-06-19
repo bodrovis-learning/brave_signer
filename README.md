@@ -4,6 +4,8 @@
 
 This program, written in Go, contains a collection of tools to generate key pairs in PEM files, sign files, and verify signatures.
 
+**[Find MD documentation in the /docs folder](./docs/brave_signer.md)**
+
 ## Usage
 
 Run it:
