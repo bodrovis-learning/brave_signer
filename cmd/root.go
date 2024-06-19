@@ -1,9 +1,8 @@
 package cmd
 
 import (
-	"context"
-
 	"brave_signer/config"
+	"context"
 
 	"github.com/spf13/cobra"
 )

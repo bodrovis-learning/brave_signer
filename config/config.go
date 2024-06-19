@@ -24,7 +24,7 @@ func LoadYamlConfig() (*viper.Viper, error) {
 	err := localViper.ReadInConfig()
 	if err != nil {
 		if _, ok := err.(viper.ConfigFileNotFoundError); ok {
-			logger.Info("Config file not found, using default settings...")
+			logger.Info("Config file not found, using CLI params or default settings...")
 		} else {
 			return localViper, fmt.Errorf("found config file, but encountered an error: %v", err)
 		}
