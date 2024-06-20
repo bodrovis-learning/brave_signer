@@ -13,15 +13,16 @@ brave_signer keys generate [flags]
 ### Options
 
 ```
-      --argon2-key-len uint32   Key length parameter used in Argon2id (default 32)
-      --argon2-memory uint32    Memory parameter (megabytes) used in Argon2id (default 64)
-      --argon2-threads uint8    Threads parameter used in Argon2id (default 4)
-      --argon2-time uint32      Time parameter used in Argon2id (default 1)
-  -h, --help                    help for generate
-      --priv-key-path string    Path to save the private key (default "priv_key.pem")
-      --priv-key-size int       Private key size in bits (default 2048)
-      --pub-key-path string     Path to save the public key (default "pub_key.pem")
-      --salt-size int           Salt size used in key derivation in bytes (default 16)
+      --argon2-key-len uint32     Key length parameter used in Argon2id (default 32)
+      --argon2-memory uint32      Memory parameter (megabytes) used in Argon2id (default 64)
+      --argon2-threads uint8      Threads parameter used in Argon2id (default 4)
+      --argon2-time uint32        Time parameter used in Argon2id (default 1)
+  -h, --help                      help for generate
+      --priv-key-path string      Path to save the private key (default "priv_key.pem")
+      --priv-key-size int         Private key size in bits (default 2048)
+      --pub-key-path string       Path to save the public key (default "pub_key.pem")
+      --salt-size int             Salt size used in key derivation in bytes (default 16)
+      --skip-pem-presence-check   Don't check if private and/or public keys already exist. Setting this option to true might result in overwriting your existing key pair.
 ```
 
 ### SEE ALSO
