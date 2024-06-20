@@ -63,6 +63,8 @@ var signaturesSignFileCmd = &cobra.Command{
 		return validateSignerID(signerID)
 	},
 	Run: func(cmd *cobra.Command, args []string) {
+		logger.Info("Starting signing process...")
+
 		localViper := cmd.Context().Value(config.ViperKey).(*viper.Viper)
 
 		logger.Info("Loading private key...")
@@ -98,8 +100,11 @@ var signaturesSignFileCmd = &cobra.Command{
 		signaturePackage, err := makeSignaturePackage(signature, localViper.GetString("signer-id"))
 		logger.HaltOnErr(err, "cannot make signature package")
 
-		err = writeSignatureToFile(signaturePackage, fullFilePath)
+		fullSigPath, err := writeSignatureToFile(signaturePackage, fullFilePath)
 		logger.HaltOnErr(err, "cannot write signature to file")
+
+		logger.Info(fmt.Sprintf("Signature generation successful for file: %s\n", filepath.Base(fullFilePath)))
+		logger.Info(fmt.Sprintf(".sig file created at: %s\n", fullSigPath))
 	},
 }
 
@@ -120,9 +125,14 @@ func makeSignaturePackage(signature []byte, signerInfo string) ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
-func writeSignatureToFile(signaturePackage []byte, initialFilePath string) error {
+func writeSignatureToFile(signaturePackage []byte, initialFilePath string) (string, error) {
 	sigFilePath := filepath.Join(filepath.Dir(initialFilePath), filepath.Base(initialFilePath)+".sig")
-	return os.WriteFile(sigFilePath, signaturePackage, 0o644)
+
+	if err := os.WriteFile(sigFilePath, signaturePackage, 0o644); err != nil {
+		return "", err
+	}
+
+	return sigFilePath, nil
 }
 
 func signDigest(digest []byte, privateKey *rsa.PrivateKey, hashType crypto.Hash) ([]byte, error) {

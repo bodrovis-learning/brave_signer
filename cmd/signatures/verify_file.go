@@ -30,6 +30,8 @@ var signaturesVerifyFileCmd = &cobra.Command{
 	Short: "Verify the signature of a file.",
 	Long:  `Verify the digital signature of a specified file using an RSA public key. The command expects a signature file named "<original_filename>.sig" located in the same directory as the file being verified. The public key should be in PEM format.`,
 	Run: func(cmd *cobra.Command, args []string) {
+		logger.Info("Starting signature verification process...")
+
 		localViper := cmd.Context().Value(config.ViperKey).(*viper.Viper)
 
 		logger.Info("Loading public key...")
@@ -40,7 +42,7 @@ var signaturesVerifyFileCmd = &cobra.Command{
 		publicKey, err := loadPublicKey(fullPubKeyPath)
 		logger.HaltOnErr(err, "cannot load pub key from file")
 
-		logger.Info("Loading file and signature key...")
+		logger.Info("Loading file to verify and signature...")
 
 		fullFilePath, err := utils.ProcessFilePath(localViper.GetString("file-path"))
 		logger.HaltOnErr(err, "failed to process file path")
@@ -63,7 +65,7 @@ var signaturesVerifyFileCmd = &cobra.Command{
 
 		logger.Info(fmt.Sprintf("Verification successful for file: %s\n", filepath.Base(fullFilePath)))
 		logger.Info(fmt.Sprintf("Verified using public key: %s\n", filepath.Base(fullPubKeyPath)))
-		logger.Info(fmt.Sprintf("Hash Algorithm: SHA3-256: %s\n", hashType.String()))
+		logger.Info(fmt.Sprintf("Hash Algorithm: %s\n", hashType.String()))
 		logger.Info(fmt.Sprintf("Signer info:\n%s\n", signerInfo))
 	},
 }

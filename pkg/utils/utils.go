@@ -1,33 +1,47 @@
 package utils
 
 import (
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 
 	"golang.org/x/term"
 )
 
-// ProcessFilePath converts a given path to an absolute path and verifies it points to a regular file.
+// ProcessFilePath converts a path to an absolute path and checks if the file exists
 func ProcessFilePath(path string) (string, error) {
 	absolutePath, err := filepath.Abs(path)
 	if err != nil {
 		return "", fmt.Errorf("converting to absolute path: %v", err)
 	}
 
-	fileInfo, err := os.Stat(absolutePath)
+	pathInfo, err := CheckPathInfo(absolutePath)
 	if err != nil {
-		if os.IsNotExist(err) {
-			return "", fmt.Errorf("path '%s' does not exist", path)
-		}
-		return "", fmt.Errorf("fetching path info: %v", err)
+		return "", err
 	}
-
-	if !fileInfo.Mode().IsRegular() {
-		return "", fmt.Errorf("path '%s' does not point to a file", path)
+	if pathInfo == nil {
+		return "", fmt.Errorf("path '%s' does not exist", path)
+	}
+	if pathInfo.IsDir() {
+		return "", fmt.Errorf("path '%s' is a directory, not a file", path)
 	}
 
 	return absolutePath, nil
+}
+
+// CheckFileExists checks if a file exists at the given path
+func CheckPathInfo(path string) (fs.FileInfo, error) {
+	fileInfo, err := os.Stat(path)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("fetching file info: %v", err)
+	}
+
+	return fileInfo, nil
 }
 
 // GetPassphrase prompts the user for a passphrase and securely reads it.

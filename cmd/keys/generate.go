@@ -35,6 +35,7 @@ func init() {
 	// Configuration flags setup
 	keysGenerateCmd.Flags().String("pub-key-path", "pub_key.pem", "Path to save the public key")
 	keysGenerateCmd.Flags().String("priv-key-path", "priv_key.pem", "Path to save the private key")
+	keysGenerateCmd.Flags().Bool("skip-pem-presence-check", false, "Don't check if private and/or public keys already exist. Setting this option to true might result in overwriting your existing key pair.")
 	keysGenerateCmd.Flags().Int("priv-key-size", 2048, "Private key size in bits")
 	keysGenerateCmd.Flags().Int("salt-size", 16, "Salt size used in key derivation in bytes")
 	keysGenerateCmd.Flags().Uint32("argon2-time", 1, "Time parameter used in Argon2id")
@@ -48,10 +49,29 @@ var keysGenerateCmd = &cobra.Command{
 	Short: "Generates key pair.",
 	Long:  `Generate an RSA key pair and store it in PEM files. The private key will be encrypted using a passphrase that you'll need to enter. AES encryption with Argon2 key derivation function is utilized.`,
 	Run: func(cmd *cobra.Command, args []string) {
+		logger.Info("Starting keys generation...")
+
 		localViper := cmd.Context().Value(config.ViperKey).(*viper.Viper)
 
+		privKeyPath, err := filepath.Abs(localViper.GetString("priv-key-path"))
+		if err != nil {
+			logger.HaltOnErr(err, "cannot process private key path")
+		}
+
+		pubKeyPath, err := filepath.Abs(localViper.GetString("pub-key-path"))
+		if err != nil {
+			logger.HaltOnErr(err, "cannot process public key path")
+		}
+
+		if !localViper.GetBool("skip-pem-presence-check") {
+			err = checkKeysExistence(privKeyPath, pubKeyPath)
+			if err != nil {
+				logger.HaltOnErr(err, "found issue when checking keys paths")
+			}
+		}
+
 		pkGenConfig := PrivateKeyGen{
-			outputPath:   localViper.GetString("priv-key-path"),
+			outputPath:   privKeyPath,
 			keyBitSize:   localViper.GetInt("priv-key-size"),
 			saltSize:     localViper.GetInt("salt-size"),
 			time:         localViper.GetUint32("argon2-time"),
@@ -67,17 +87,37 @@ var keysGenerateCmd = &cobra.Command{
 
 		logger.Info("Generating public key...")
 
-		err = generatePubKey(localViper.GetString("pub-key-path"), privateKey)
+		err = generatePubKey(pubKeyPath, privateKey)
 		logger.HaltOnErr(err, "cannot create pub key")
+
+		logger.Info("Key generation successful!")
+		logger.Info(fmt.Sprintf("Private key created at: %s\n", privKeyPath))
+		logger.Info(fmt.Sprintf("Public key created at: %s\n", pubKeyPath))
 	},
 }
 
-func generatePrivKey(pkGenConfig PrivateKeyGen) (*rsa.PrivateKey, error) {
-	absPath, err := filepath.Abs(pkGenConfig.outputPath)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get absolute path: %v", err)
+func checkKeysExistence(privKeyPath, pubKeyPath string) error {
+	if err := checkKeyExistence(privKeyPath, "private"); err != nil {
+		return err
 	}
+	if err := checkKeyExistence(pubKeyPath, "public"); err != nil {
+		return err
+	}
+	return nil
+}
 
+func checkKeyExistence(keyPath, keyType string) error {
+	pathInfo, err := utils.CheckPathInfo(keyPath)
+	if err != nil {
+		return fmt.Errorf("failed to check %s key path: %v", keyType, err)
+	}
+	if pathInfo != nil && !pathInfo.IsDir() {
+		return fmt.Errorf("%s key already exists at: %s (you can suppress this check by setting --skip-pem-presence-check to true)", keyType, keyPath)
+	}
+	return nil
+}
+
+func generatePrivKey(pkGenConfig PrivateKeyGen) (*rsa.PrivateKey, error) {
 	privateKey, err := rsa.GenerateKey(rand.Reader, pkGenConfig.keyBitSize)
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate private key: %v", err)
@@ -133,7 +173,7 @@ func generatePrivKey(pkGenConfig PrivateKeyGen) (*rsa.PrivateKey, error) {
 		},
 	}
 
-	err = savePrivKeyToPEM(absPath, encryptedPEMBlock)
+	err = savePrivKeyToPEM(pkGenConfig.outputPath, encryptedPEMBlock)
 	if err != nil {
 		return nil, err
 	}
@@ -155,18 +195,13 @@ func savePrivKeyToPEM(absPath string, encryptedPEMBlock *pem.Block) error {
 	return nil
 }
 
-func generatePubKey(path string, privKey *rsa.PrivateKey) error {
-	absPath, err := filepath.Abs(path)
-	if err != nil {
-		return fmt.Errorf("failed to get absolute path: %v", err)
-	}
-
+func generatePubKey(filePath string, privKey *rsa.PrivateKey) error {
 	pubASN1, err := x509.MarshalPKIXPublicKey(&privKey.PublicKey)
 	if err != nil {
 		return fmt.Errorf("failed to marshal public key: %v", err)
 	}
 
-	file, err := os.Create(absPath)
+	file, err := os.Create(filePath)
 	if err != nil {
 		return fmt.Errorf("failed to create public key file: %v", err)
 	}
