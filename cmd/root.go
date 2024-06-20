@@ -15,6 +15,8 @@ import (
 	"github.com/spf13/cobra"
 )
 
+var version = "dev" // default version, can be overridden at build time
+
 func RootCmd() *cobra.Command {
 	rootCmd := &cobra.Command{
 		Use:          "brave_signer",
@@ -37,6 +39,15 @@ func RootCmd() *cobra.Command {
 	// Add subcommands
 	keys.Init(rootCmd)
 	signatures.Init(rootCmd)
+
+	rootCmd.AddCommand(&cobra.Command{
+		Use:   "version",
+		Short: "Print the version number of brave_signer",
+		Long:  `All software has versions. This is brave_signer's version.`,
+		Run: func(cmd *cobra.Command, args []string) {
+			fmt.Println("brave_signer version:", version)
+		},
+	})
 
 	// Add hidden docs command
 	rootCmd.AddCommand(&cobra.Command{
