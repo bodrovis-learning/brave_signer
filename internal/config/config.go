@@ -14,12 +14,18 @@ type ContextKey int
 
 const ViperKey ContextKey = iota
 
-// LoadYamlConfig loads configuration from a YAML file
-func LoadYamlConfig() (*viper.Viper, error) {
+type ConfigParams struct {
+	Name string
+	Type string
+	Path string
+}
+
+// LoadFromFile loads configuration from a file
+func LoadFromFile(params ConfigParams) (*viper.Viper, error) {
 	localViper := viper.New()
-	localViper.SetConfigName("config")
-	localViper.SetConfigType("yaml")
-	localViper.AddConfigPath(".")
+	localViper.SetConfigName(params.Name)
+	localViper.SetConfigType(params.Type)
+	localViper.AddConfigPath(params.Path)
 
 	err := localViper.ReadInConfig()
 	if err != nil {

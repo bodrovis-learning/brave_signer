@@ -22,9 +22,17 @@ func RootCmd() *cobra.Command {
 		Long:         `A collection of tools to generate key pairs in PEM files, sign files, and verify signatures.`,
 		SilenceUsage: true,
 		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
-			return initializeConfig(cmd)
+			return initializeConfig(cmd, config.ConfigParams{
+				Name: cmd.Flag("config-file-name").Value.String(),
+				Type: cmd.Flag("config-file-type").Value.String(),
+				Path: cmd.Flag("config-path").Value.String(),
+			})
 		},
 	}
+
+	rootCmd.PersistentFlags().String("config-file-name", "config", "Your config file name.")
+	rootCmd.PersistentFlags().String("config-file-type", "yaml", "Your config file type.")
+	rootCmd.PersistentFlags().String("config-path", ".", "Config file location.")
 
 	// Add subcommands
 	keys.Init(rootCmd)
@@ -44,8 +52,8 @@ func RootCmd() *cobra.Command {
 	return rootCmd
 }
 
-func initializeConfig(cmd *cobra.Command) error {
-	localViper, err := config.LoadYamlConfig()
+func initializeConfig(cmd *cobra.Command, params config.ConfigParams) error {
+	localViper, err := config.LoadFromFile(params)
 	if err != nil {
 		return err
 	}
