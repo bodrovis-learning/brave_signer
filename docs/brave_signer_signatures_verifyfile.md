@@ -20,8 +20,11 @@ brave_signer signatures verifyfile [flags]
 ### Options inherited from parent commands
 
 ```
-      --file-path string   Path to the file that should be signed
-      --hash-algo string   Hashing algorithm to use (default "sha3-256")
+      --config-file-name string   Your config file name. (default "config")
+      --config-file-type string   Your config file type. (default "yaml")
+      --config-path string        Config file location. (default ".")
+      --file-path string          Path to the file that should be signed
+      --hash-algo string          Hashing algorithm to use (default "sha3-256")
 ```
 
 ### SEE ALSO

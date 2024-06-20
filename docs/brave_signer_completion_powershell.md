@@ -25,6 +25,14 @@ brave_signer completion powershell [flags]
       --no-descriptions   disable completion descriptions
 ```
 
+### Options inherited from parent commands
+
+```
+      --config-file-name string   Your config file name. (default "config")
+      --config-file-type string   Your config file type. (default "yaml")
+      --config-path string        Config file location. (default ".")
+```
+
 ### SEE ALSO
 
 * [brave_signer completion](brave_signer_completion.md)	 - Generate the autocompletion script for the specified shell

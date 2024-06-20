@@ -14,6 +14,14 @@ Use subcommands to create signature (.sig) with private key and verify signature
   -h, --help               help for signatures
 ```
 
+### Options inherited from parent commands
+
+```
+      --config-file-name string   Your config file name. (default "config")
+      --config-file-type string   Your config file type. (default "yaml")
+      --config-path string        Config file location. (default ".")
+```
+
 ### SEE ALSO
 
 * [brave_signer](brave_signer.md)	 - Bravely generate key pairs, sign files, and check signatures.

@@ -25,6 +25,14 @@ brave_signer keys generate [flags]
       --skip-pem-presence-check   Don't check if private and/or public keys already exist. Setting this option to true might result in overwriting your existing key pair.
 ```
 
+### Options inherited from parent commands
+
+```
+      --config-file-name string   Your config file name. (default "config")
+      --config-file-type string   Your config file type. (default "yaml")
+      --config-path string        Config file location. (default ".")
+```
+
 ### SEE ALSO
 
 * [brave_signer keys](brave_signer_keys.md)	 - Manage key pairs.
