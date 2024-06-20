@@ -3,7 +3,7 @@ package config
 import (
 	"fmt"
 
-	"brave_signer/logger"
+	"brave_signer/internal/logger"
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"

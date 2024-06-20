@@ -11,9 +11,9 @@ import (
 	"os"
 	"path/filepath"
 
-	"brave_signer/config"
-	"brave_signer/logger"
-	"brave_signer/utils"
+	"brave_signer/internal/config"
+	"brave_signer/internal/logger"
+	"brave_signer/pkg/utils"
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
