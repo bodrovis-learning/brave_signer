@@ -35,7 +35,6 @@ func init() {
 	signaturesCmd.AddCommand(signaturesSignFileCmd)
 
 	signaturesSignFileCmd.Flags().String("priv-key-path", "priv_key.pem", "Path to your private key")
-	signaturesSignFileCmd.Flags().String("file-path", "", "Path to the file that should be signed")
 	signaturesSignFileCmd.Flags().String("signer-id", "", "Signer's name or identifier")
 	signaturesSignFileCmd.Flags().Uint32("argon2-time", 1, "Time parameter used in Argon2id")
 	signaturesSignFileCmd.Flags().Uint32("argon2-memory", 64, "Memory parameter (megabytes) used in Argon2id")
@@ -85,12 +84,15 @@ var signaturesSignFileCmd = &cobra.Command{
 		fullFilePath, err := utils.ProcessFilePath(localViper.GetString("file-path"))
 		logger.HaltOnErr(err, "failed to process file path")
 
-		digest, err := hashFile(fullFilePath)
+		hashAlgo := localViper.GetString("hash-algo")
+		hasher, hashType := getHashFunction(hashAlgo)
+
+		digest, err := hashFile(fullFilePath, hasher)
 		logger.HaltOnErr(err, "cannot hash the file")
 
 		logger.Info("Signing the file...")
 
-		signature, err := signDigest(digest, privateKey)
+		signature, err := signDigest(digest, privateKey, hashType)
 		logger.HaltOnErr(err, "cannot sign the file")
 
 		signaturePackage, err := makeSignaturePackage(signature, localViper.GetString("signer-id"))
@@ -123,12 +125,12 @@ func writeSignatureToFile(signaturePackage []byte, initialFilePath string) error
 	return os.WriteFile(sigFilePath, signaturePackage, 0o644)
 }
 
-func signDigest(digest []byte, privateKey *rsa.PrivateKey) ([]byte, error) {
+func signDigest(digest []byte, privateKey *rsa.PrivateKey, hashType crypto.Hash) ([]byte, error) {
 	opts := &rsa.PSSOptions{
 		SaltLength: rsa.PSSSaltLengthAuto,
 	}
 
-	signature, err := rsa.SignPSS(rand.Reader, privateKey, crypto.SHA3_256, digest, opts)
+	signature, err := rsa.SignPSS(rand.Reader, privateKey, hashType, digest, opts)
 	if err != nil {
 		return nil, fmt.Errorf("failed to sign digest: %v", err)
 	}

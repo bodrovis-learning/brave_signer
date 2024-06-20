@@ -17,10 +17,16 @@ brave_signer signatures signfile [flags]
       --argon2-memory uint32    Memory parameter (megabytes) used in Argon2id (default 64)
       --argon2-threads uint8    Threads parameter used in Argon2id (default 4)
       --argon2-time uint32      Time parameter used in Argon2id (default 1)
-      --file-path string        Path to the file that should be signed
   -h, --help                    help for signfile
       --priv-key-path string    Path to your private key (default "priv_key.pem")
       --signer-id string        Signer's name or identifier
+```
+
+### Options inherited from parent commands
+
+```
+      --file-path string   Path to the file that should be signed
+      --hash-algo string   Hashing algorithm to use (default "sha3-256")
 ```
 
 ### SEE ALSO

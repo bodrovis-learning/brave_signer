@@ -9,7 +9,9 @@ Use subcommands to create signature (.sig) with private key and verify signature
 ### Options
 
 ```
-  -h, --help   help for signatures
+      --file-path string   Path to the file that should be signed
+      --hash-algo string   Hashing algorithm to use (default "sha3-256")
+  -h, --help               help for signatures
 ```
 
 ### SEE ALSO

@@ -13,9 +13,15 @@ brave_signer signatures verifyfile [flags]
 ### Options
 
 ```
-      --file-path string      Path to the file that should be verified
   -h, --help                  help for verifyfile
       --pub-key-path string   Path to the public key (default "pub_key.pem")
+```
+
+### Options inherited from parent commands
+
+```
+      --file-path string   Path to the file that should be signed
+      --hash-algo string   Hashing algorithm to use (default "sha3-256")
 ```
 
 ### SEE ALSO

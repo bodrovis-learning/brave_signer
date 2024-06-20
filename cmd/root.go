@@ -35,7 +35,7 @@ func RootCmd() *cobra.Command {
 		Use:    "gendocs",
 		Hidden: true,
 		Run: func(cmd *cobra.Command, args []string) {
-			if err := generateDocs(rootCmd, "./docs"); err == nil {
+			if err := generateDocs(rootCmd, "./docs"); err != nil {
 				logger.Warn(fmt.Errorf("error generating docs: %v", err))
 			}
 		},

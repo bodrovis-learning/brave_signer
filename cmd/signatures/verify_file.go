@@ -23,7 +23,6 @@ func init() {
 	signaturesCmd.AddCommand(signaturesVerifyFileCmd)
 
 	signaturesVerifyFileCmd.Flags().String("pub-key-path", "pub_key.pem", "Path to the public key")
-	signaturesVerifyFileCmd.Flags().String("file-path", "", "Path to the file that should be verified")
 }
 
 var signaturesVerifyFileCmd = &cobra.Command{
@@ -51,22 +50,25 @@ var signaturesVerifyFileCmd = &cobra.Command{
 
 		logger.Info("Hashing the file...")
 
-		digest, err := hashFile(fullFilePath)
+		hashAlgo := localViper.GetString("hash-algo")
+		hasher, hashType := getHashFunction(hashAlgo)
+
+		digest, err := hashFile(fullFilePath, hasher)
 		logger.HaltOnErr(err, "cannot hash file")
 
 		logger.Info("Verifying signature...")
 
-		signerInfo, err := verifyFileSignature(publicKey, digest, signatureRaw)
+		signerInfo, err := verifyFileSignature(publicKey, digest, signatureRaw, hashType)
 		logger.HaltOnErr(err, "cannot verify signature")
 
 		logger.Info(fmt.Sprintf("Verification successful for file: %s\n", filepath.Base(fullFilePath)))
 		logger.Info(fmt.Sprintf("Verified using public key: %s\n", filepath.Base(fullPubKeyPath)))
-		logger.Info("Hash Algorithm: SHA3-256\n")
+		logger.Info(fmt.Sprintf("Hash Algorithm: SHA3-256: %s\n", hashType.String()))
 		logger.Info(fmt.Sprintf("Signer info:\n%s\n", signerInfo))
 	},
 }
 
-func verifyFileSignature(publicKey *rsa.PublicKey, digest []byte, signatureRaw []byte) ([]byte, error) {
+func verifyFileSignature(publicKey *rsa.PublicKey, digest []byte, signatureRaw []byte, hashType crypto.Hash) ([]byte, error) {
 	buf := bytes.NewReader(signatureRaw)
 
 	var nameLength uint32
@@ -87,7 +89,7 @@ func verifyFileSignature(publicKey *rsa.PublicKey, digest []byte, signatureRaw [
 	}
 
 	opts := &rsa.PSSOptions{SaltLength: rsa.PSSSaltLengthAuto}
-	if err := rsa.VerifyPSS(publicKey, crypto.SHA3_256, digest, signature, opts); err != nil {
+	if err := rsa.VerifyPSS(publicKey, hashType, digest, signature, opts); err != nil {
 		return nil, fmt.Errorf("signature verification failed: %v", err)
 	}
 
