@@ -41,7 +41,12 @@ var DefaultHashFunction = HashFunctionMap[defaultHasherName]
 var signaturesCmd = &cobra.Command{
 	Use:   "signatures",
 	Short: "Create and verify signatures.",
-	Long:  `Use subcommands to create signature (.sig) with private key and verify signature with public key.`,
+	Long: `The signatures command provides subcommands to create and verify digital signatures.
+
+Features:
+- Securely sign files to ensure their authenticity and integrity.
+- Verify signatures to confirm the origin and integrity of files.
+`,
 }
 
 // Init initializes signatures commands
@@ -49,8 +54,8 @@ func Init(rootCmd *cobra.Command) {
 	rootCmd.AddCommand(signaturesCmd)
 
 	// Initialize persistent flags
-	signaturesCmd.PersistentFlags().String("file-path", "", "Path to the file that should be signed")
-	signaturesCmd.PersistentFlags().String("hash-algo", defaultHasherName, "Hashing algorithm to use")
+	signaturesCmd.PersistentFlags().String("file-path", "", "Path to the file that should be signed or verified")
+	signaturesCmd.PersistentFlags().String("hash-algo", defaultHasherName, "Hashing algorithm to use for signing and verification")
 }
 
 // hashFile hashes the content of a file using the specified hash function

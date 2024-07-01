@@ -2,10 +2,7 @@ package signatures
 
 import (
 	"bytes"
-	"crypto"
-	"crypto/rand"
-	"crypto/rsa"
-	"crypto/x509"
+	"crypto/ed25519"
 	"encoding/base64"
 	"encoding/binary"
 	"encoding/pem"
@@ -34,12 +31,12 @@ type PkLoadConfig struct {
 func init() {
 	signaturesCmd.AddCommand(signaturesSignFileCmd)
 
-	signaturesSignFileCmd.Flags().String("priv-key-path", "priv_key.pem", "Path to your private key")
+	signaturesSignFileCmd.Flags().String("priv-key-path", "priv_key.pem", "Path to your Ed25519 private key in PEM format")
 	signaturesSignFileCmd.Flags().String("signer-id", "", "Signer's name or identifier")
-	signaturesSignFileCmd.Flags().Uint32("argon2-time", 1, "Time parameter used in Argon2id")
-	signaturesSignFileCmd.Flags().Uint32("argon2-memory", 64, "Memory parameter (megabytes) used in Argon2id")
-	signaturesSignFileCmd.Flags().Uint8("argon2-threads", 4, "Threads parameter used in Argon2id")
-	signaturesSignFileCmd.Flags().Uint32("argon2-key-len", 32, "Key length parameter used in Argon2id")
+	signaturesSignFileCmd.Flags().Uint32("argon2-time", 1, "Time parameter used in the Argon2id key derivation function")
+	signaturesSignFileCmd.Flags().Uint32("argon2-memory", 64, "Memory parameter (in megabytes) used in the Argon2id key derivation function")
+	signaturesSignFileCmd.Flags().Uint8("argon2-threads", 4, "Number of threads used in the Argon2id key derivation function")
+	signaturesSignFileCmd.Flags().Uint32("argon2-key-len", 32, "Length of the derived key (in bytes) for the Argon2id key derivation function")
 }
 
 func validateSignerID(signerID string) error {
@@ -57,7 +54,14 @@ func validateSignerID(signerID string) error {
 var signaturesSignFileCmd = &cobra.Command{
 	Use:   "signfile",
 	Short: "Sign the file.",
-	Long:  `Sign the specified file using an RSA private key and store the signature inside a .sig file named after the original file. You'll be asked for a passphrase to decrypt the private key.`,
+	Long: `Sign the specified file using an Ed25519 private key and store the signature inside a .sig file named after the original file. You'll be asked for a passphrase to decrypt the private key.
+
+The process involves:
+1. Loading and decrypting the Ed25519 private key.
+2. Hashing the file using the specified hash algorithm.
+3. Signing the hash of the file.
+4. Storing the signature along with the signer information in a .sig file located in the same directory as the original file.
+`,
 	PreRunE: func(cmd *cobra.Command, args []string) error {
 		signerID := cmd.Flag("signer-id").Value.String()
 		return validateSignerID(signerID)
@@ -87,15 +91,14 @@ var signaturesSignFileCmd = &cobra.Command{
 		logger.HaltOnErr(err, "failed to process file path")
 
 		hashAlgo := localViper.GetString("hash-algo")
-		hasher, hashType := getHashFunction(hashAlgo)
+		hasher, _ := getHashFunction(hashAlgo)
 
 		digest, err := hashFile(fullFilePath, hasher)
 		logger.HaltOnErr(err, "cannot hash the file")
 
 		logger.Info("Signing the file...")
 
-		signature, err := signDigest(digest, privateKey, hashType)
-		logger.HaltOnErr(err, "cannot sign the file")
+		signature := signMessage(digest, privateKey)
 
 		signaturePackage, err := makeSignaturePackage(signature, localViper.GetString("signer-id"))
 		logger.HaltOnErr(err, "cannot make signature package")
@@ -135,17 +138,9 @@ func writeSignatureToFile(signaturePackage []byte, initialFilePath string) (stri
 	return sigFilePath, nil
 }
 
-func signDigest(digest []byte, privateKey *rsa.PrivateKey, hashType crypto.Hash) ([]byte, error) {
-	opts := &rsa.PSSOptions{
-		SaltLength: rsa.PSSSaltLengthAuto,
-	}
-
-	signature, err := rsa.SignPSS(rand.Reader, privateKey, hashType, digest, opts)
-	if err != nil {
-		return nil, fmt.Errorf("failed to sign digest: %v", err)
-	}
-
-	return signature, nil
+func signMessage(message []byte, privateKey ed25519.PrivateKey) []byte {
+	signature := ed25519.Sign(privateKey, message)
+	return signature
 }
 
 func decodePEMFile(pkPath string) (*pem.Block, error) {
@@ -187,7 +182,7 @@ func getSaltAndNonce(block *pem.Block) ([]byte, []byte, error) {
 	return nonce, salt, nil
 }
 
-func loadPrivateKey(config PkLoadConfig) (*rsa.PrivateKey, error) {
+func loadPrivateKey(config PkLoadConfig) (ed25519.PrivateKey, error) {
 	block, err := decodePEMFile(config.pkPath)
 	if err != nil {
 		return nil, err
@@ -212,7 +207,9 @@ func loadPrivateKey(config PkLoadConfig) (*rsa.PrivateKey, error) {
 		KeyLen:     config.argon2KeyLen,
 		Threads:    config.threads,
 	})
-	logger.HaltOnErr(err)
+	if err != nil {
+		return nil, fmt.Errorf("failed to derive key: %v", err)
+	}
 
 	crypter, err := crypto_utils.MakeCrypter(key)
 	if err != nil {
@@ -222,12 +219,13 @@ func loadPrivateKey(config PkLoadConfig) (*rsa.PrivateKey, error) {
 	// Decrypt the private key
 	plaintext, err := crypter.Open(nil, []byte(nonce), block.Bytes, nil)
 	if err != nil {
-		return nil, fmt.Errorf("private key file descryption failed: %v", err)
+		return nil, fmt.Errorf("private key file decryption failed: %v", err)
 	}
 
-	privateKey, err := x509.ParsePKCS1PrivateKey(plaintext)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse private key: %v", err)
+	// Parse the Ed25519 private key
+	privateKey := ed25519.PrivateKey(plaintext)
+	if len(privateKey) != ed25519.PrivateKeySize {
+		return nil, fmt.Errorf("invalid private key size")
 	}
 
 	return privateKey, nil

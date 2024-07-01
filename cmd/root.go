@@ -19,9 +19,16 @@ var version = "dev" // default version, can be overridden at build time
 
 func RootCmd() *cobra.Command {
 	rootCmd := &cobra.Command{
-		Use:          "brave_signer",
-		Short:        "Bravely generate key pairs, sign files, and check signatures.",
-		Long:         `A collection of tools to generate key pairs in PEM files, sign files, and verify signatures.`,
+		Use:   "brave_signer",
+		Short: "Bravely generate key pairs, sign files, and verify signatures.",
+		Long: `brave_signer is a comprehensive toolset for cryptographic operations, including generating Ed25519 key pairs, signing files, and verifying signatures. 
+	
+	Features:
+	- Generate secure Ed25519 key pairs and store them in PEM files.
+	- Encrypt private keys using AES with Argon2 key derivation.
+	- Sign files and create .sig files containing the signature and signer information.
+	- Verify file signatures to ensure authenticity and integrity.
+	`,
 		SilenceUsage: true,
 		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
 			return initializeConfig(cmd, config.ConfigParams{

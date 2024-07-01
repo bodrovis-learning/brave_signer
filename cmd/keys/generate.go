@@ -1,9 +1,8 @@
 package keys
 
 import (
+	"crypto/ed25519"
 	"crypto/rand"
-	"crypto/rsa"
-	"crypto/x509"
 	"encoding/base64"
 	"encoding/pem"
 	"fmt"
@@ -19,35 +18,39 @@ import (
 	"github.com/spf13/viper"
 )
 
-type PrivateKeyGen struct {
-	outputPath   string
-	keyBitSize   int
-	saltSize     int
-	time         uint32
-	memory       uint32
-	threads      uint8
-	argon2KeyLen uint32
+type KeyGenConfig struct {
+	privKeyOutputPath string
+	pubKeyOutputPath  string
+	saltSize          int
+	time              uint32
+	memory            uint32
+	threads           uint8
+	argon2KeyLen      uint32
 }
 
 func init() {
 	keysCmd.AddCommand(keysGenerateCmd)
 
 	// Configuration flags setup
-	keysGenerateCmd.Flags().String("pub-key-path", "pub_key.pem", "Path to save the public key")
-	keysGenerateCmd.Flags().String("priv-key-path", "priv_key.pem", "Path to save the private key")
-	keysGenerateCmd.Flags().Bool("skip-pem-presence-check", false, "Don't check if private and/or public keys already exist. Setting this option to true might result in overwriting your existing key pair.")
-	keysGenerateCmd.Flags().Int("priv-key-size", 2048, "Private key size in bits")
-	keysGenerateCmd.Flags().Int("salt-size", 16, "Salt size used in key derivation in bytes")
-	keysGenerateCmd.Flags().Uint32("argon2-time", 1, "Time parameter used in Argon2id")
-	keysGenerateCmd.Flags().Uint32("argon2-memory", 64, "Memory parameter (megabytes) used in Argon2id")
-	keysGenerateCmd.Flags().Uint8("argon2-threads", 4, "Threads parameter used in Argon2id")
-	keysGenerateCmd.Flags().Uint32("argon2-key-len", 32, "Key length parameter used in Argon2id")
+	keysGenerateCmd.Flags().String("pub-key-path", "pub_key.pem", "Path to save the public key in PEM format")
+	keysGenerateCmd.Flags().String("priv-key-path", "priv_key.pem", "Path to save the private key in PEM format")
+	keysGenerateCmd.Flags().Bool("skip-pem-presence-check", false, "Skip checking if private and/or public keys already exist. Setting this option to true might result in overwriting your existing key pair")
+	keysGenerateCmd.Flags().Int("salt-size", 16, "Salt size (in bytes) used in the Argon2 key derivation process")
+	keysGenerateCmd.Flags().Uint32("argon2-time", 1, "Time parameter for the Argon2id key derivation function")
+	keysGenerateCmd.Flags().Uint32("argon2-memory", 64, "Memory parameter (in megabytes) for the Argon2id key derivation function")
+	keysGenerateCmd.Flags().Uint8("argon2-threads", 4, "Number of threads used in the Argon2id key derivation function")
+	keysGenerateCmd.Flags().Uint32("argon2-key-len", 32, "Length of the derived key (in bytes) for the Argon2id key derivation function")
 }
 
 var keysGenerateCmd = &cobra.Command{
 	Use:   "generate",
-	Short: "Generates key pair.",
-	Long:  `Generate an RSA key pair and store it in PEM files. The private key will be encrypted using a passphrase that you'll need to enter. AES encryption with Argon2 key derivation function is utilized.`,
+	Short: "Generates an Ed25519 key pair.",
+	Long: `Generate an Ed25519 key pair and store it in PEM files. The private key will be encrypted using a passphrase that you'll need to enter. AES encryption with the Argon2 key derivation function is utilized for strong security.
+
+The following files will be created:
+- A private key file (encrypted) in PEM format.
+- A public key file in PEM format.
+`,
 	Run: func(cmd *cobra.Command, args []string) {
 		logger.Info("Starting keys generation...")
 
@@ -70,30 +73,96 @@ var keysGenerateCmd = &cobra.Command{
 			}
 		}
 
-		pkGenConfig := PrivateKeyGen{
-			outputPath:   privKeyPath,
-			keyBitSize:   localViper.GetInt("priv-key-size"),
-			saltSize:     localViper.GetInt("salt-size"),
-			time:         localViper.GetUint32("argon2-time"),
-			memory:       localViper.GetUint32("argon2-memory"),
-			threads:      uint8(localViper.GetUint("argon2-threads")),
-			argon2KeyLen: localViper.GetUint32("argon2-key-len"),
+		pkGenConfig := KeyGenConfig{
+			privKeyOutputPath: privKeyPath,
+			pubKeyOutputPath:  pubKeyPath,
+			saltSize:          localViper.GetInt("salt-size"),
+			time:              localViper.GetUint32("argon2-time"),
+			memory:            localViper.GetUint32("argon2-memory"),
+			threads:           uint8(localViper.GetUint("argon2-threads")),
+			argon2KeyLen:      localViper.GetUint32("argon2-key-len"),
 		}
 
-		logger.Info("Generating private key...")
+		logger.Info("Generating key pair...")
 
-		privateKey, err := generatePrivKey(pkGenConfig)
-		logger.HaltOnErr(err, "cannot create priv key")
-
-		logger.Info("Generating public key...")
-
-		err = generatePubKey(pubKeyPath, privateKey)
-		logger.HaltOnErr(err, "cannot create pub key")
+		err = generateEd25519Keys(pkGenConfig)
+		logger.HaltOnErr(err, "cannot create key pair")
 
 		logger.Info("Key generation successful!")
 		logger.Info(fmt.Sprintf("Private key created at: %s\n", privKeyPath))
 		logger.Info(fmt.Sprintf("Public key created at: %s\n", pubKeyPath))
 	},
+}
+
+func generateEd25519Keys(keyConfig KeyGenConfig) error {
+	publicKey, privateKey, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		return fmt.Errorf("failed to generate Ed25519 key pair: %v", err)
+	}
+
+	passphrase, err := utils.GetPassphrase()
+	if err != nil {
+		return fmt.Errorf("failed to fetch passphrase: %v", err)
+	}
+
+	salt, err := makeSalt(keyConfig.saltSize)
+	if err != nil {
+		return err
+	}
+
+	key, err := crypto_utils.DeriveKey(crypto_utils.KeyDerivationConfig{
+		Passphrase: passphrase,
+		Salt:       salt,
+		Time:       keyConfig.time,
+		Memory:     keyConfig.memory,
+		KeyLen:     keyConfig.argon2KeyLen,
+		Threads:    keyConfig.threads,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to derive key: %v", err)
+	}
+
+	crypter, err := crypto_utils.MakeCrypter(key)
+	if err != nil {
+		return fmt.Errorf("failed to create crypter: %v", err)
+	}
+
+	// Create a nonce for AES-GCM
+	nonce, err := crypto_utils.MakeNonce(crypter)
+	if err != nil {
+		return fmt.Errorf("failed to make nonce: %v", err)
+	}
+
+	// Encrypt the private key
+	encryptedData := crypter.Seal(nil, nonce, privateKey, nil)
+
+	// Create a PEM block with the encrypted data
+	encryptedPEMBlock := &pem.Block{
+		Type:  "ENCRYPTED ED25519 PRIVATE KEY",
+		Bytes: encryptedData,
+		Headers: map[string]string{
+			"Nonce":                   base64.StdEncoding.EncodeToString(nonce),
+			"Salt":                    base64.StdEncoding.EncodeToString(salt),
+			"Key-Derivation-Function": "Argon2",
+		},
+	}
+
+	err = savePrivKeyToPEM(keyConfig.privKeyOutputPath, encryptedPEMBlock)
+	if err != nil {
+		return err
+	}
+
+	// Save the public key as well, if needed
+	publicKeyPem := &pem.Block{
+		Type:  "ED25519 PUBLIC KEY",
+		Bytes: publicKey,
+	}
+	err = savePubKeyToPEM(keyConfig.pubKeyOutputPath, publicKeyPem)
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
 
 func checkKeysExistence(privKeyPath, pubKeyPath string) error {
@@ -117,70 +186,6 @@ func checkKeyExistence(keyPath, keyType string) error {
 	return nil
 }
 
-func generatePrivKey(pkGenConfig PrivateKeyGen) (*rsa.PrivateKey, error) {
-	privateKey, err := rsa.GenerateKey(rand.Reader, pkGenConfig.keyBitSize)
-	if err != nil {
-		return nil, fmt.Errorf("failed to generate private key: %v", err)
-	}
-
-	passphrase, err := utils.GetPassphrase()
-	if err != nil {
-		return nil, fmt.Errorf("failed to fetch passphrase: %v", err)
-	}
-
-	// Marshal the private key to DER format
-	privateKeyBytes := x509.MarshalPKCS1PrivateKey(privateKey)
-
-	salt, err := makeSalt(pkGenConfig.saltSize)
-	if err != nil {
-		return nil, err
-	}
-
-	key, err := crypto_utils.DeriveKey(crypto_utils.KeyDerivationConfig{
-		Passphrase: passphrase,
-		Salt:       salt,
-		Time:       pkGenConfig.time,
-		Memory:     pkGenConfig.memory,
-		KeyLen:     pkGenConfig.argon2KeyLen,
-		Threads:    pkGenConfig.threads,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("failed to derive key: %v", err)
-	}
-
-	crypter, err := crypto_utils.MakeCrypter(key)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create cryper: %v", err)
-	}
-
-	// Create a nonce for AES-GCM
-	nonce, err := crypto_utils.MakeNonce(crypter)
-	if err != nil {
-		return nil, fmt.Errorf("failed to make nonce: %v", err)
-	}
-
-	// Encrypt the private key
-	encryptedData := crypter.Seal(nil, nonce, privateKeyBytes, nil)
-
-	// Create a PEM block with the encrypted data
-	encryptedPEMBlock := &pem.Block{
-		Type:  "ENCRYPTED PRIVATE KEY",
-		Bytes: encryptedData,
-		Headers: map[string]string{
-			"Nonce":                   base64.StdEncoding.EncodeToString(nonce),
-			"Salt":                    base64.StdEncoding.EncodeToString(salt),
-			"Key-Derivation-Function": "Argon2",
-		},
-	}
-
-	err = savePrivKeyToPEM(pkGenConfig.outputPath, encryptedPEMBlock)
-	if err != nil {
-		return nil, err
-	}
-
-	return privateKey, nil
-}
-
 func savePrivKeyToPEM(absPath string, encryptedPEMBlock *pem.Block) error {
 	privKeyFile, err := os.Create(absPath)
 	if err != nil {
@@ -195,20 +200,16 @@ func savePrivKeyToPEM(absPath string, encryptedPEMBlock *pem.Block) error {
 	return nil
 }
 
-func generatePubKey(filePath string, privKey *rsa.PrivateKey) error {
-	pubASN1, err := x509.MarshalPKIXPublicKey(&privKey.PublicKey)
-	if err != nil {
-		return fmt.Errorf("failed to marshal public key: %v", err)
-	}
-
-	file, err := os.Create(filePath)
+func savePubKeyToPEM(outputPath string, pemBlock *pem.Block) error {
+	file, err := os.Create(outputPath)
 	if err != nil {
 		return fmt.Errorf("failed to create public key file: %v", err)
 	}
 	defer file.Close()
 
-	if err := pem.Encode(file, &pem.Block{Type: "RSA PUBLIC KEY", Bytes: pubASN1}); err != nil {
-		return fmt.Errorf("failed to encode public key to PEM: %v", err)
+	err = pem.Encode(file, pemBlock)
+	if err != nil {
+		return fmt.Errorf("failed to write public key PEM: %v", err)
 	}
 
 	return nil
