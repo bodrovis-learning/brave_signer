@@ -26,10 +26,13 @@ builds:
       - "-s -w -X 'brave_signer/cmd.version={{.Version}}'"
 
 upx:
-  enabled: true
-  compress: best
-  lzma: true
-  brute: true
+  - # Whether to enable it or not.
+    #
+    # Templates: allowed.
+    enabled: true
+    compress: best
+    lzma: true
+    brute: true
 
 archives:
   - format: tar.gz
@@ -46,8 +49,8 @@ archives:
       - goos: windows
         format: zip
     # Exclude wasm from archiving, as it does not require a standard binary archive
-    exclude:
-      - js/wasm
+    # exclude:
+    #   - js/wasm
 
 changelog:
   sort: asc
