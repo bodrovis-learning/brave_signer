@@ -33,6 +33,7 @@ upx:
     compress: best
     lzma: true
     brute: true
+    goos: [linux, darwin, windows]
 
 archives:
   - format: tar.gz

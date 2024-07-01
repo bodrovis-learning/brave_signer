@@ -2,7 +2,7 @@
 
 > Bravely generate key pairs, sign files, and check signatures.
 
-This program, written in Go, contains a collection of tools to generate key pairs in PEM files, sign files, and verify signatures.
+This program, written in Go, contains a collection of tools to generate key pairs in PEM files, sign files, and verify signatures using [ed25519](https://ed25519.cr.yp.to/).
 
 **[Find MD documentation in the /docs folder](./docs/brave_signer.md)**
 
@@ -13,7 +13,6 @@ Run it:
 ```
 brave_signer COMMAND FLAGS
 ```
-
 
 Available commands (check documentation to learn about all supported settings):
 
