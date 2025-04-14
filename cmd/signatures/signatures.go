@@ -64,7 +64,11 @@ func hashFile(filePath string, hasher hash.Hash) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("unable to open file %s: %v", filePath, err)
 	}
-	defer file.Close()
+	defer func() {
+		if closeErr := file.Close(); closeErr != nil {
+			logger.Warn(closeErr, "cannot close file after hashing")
+		}
+	}()
 
 	if _, err := io.Copy(hasher, file); err != nil {
 		return nil, fmt.Errorf("error while hashing file %s: %v", filePath, err)

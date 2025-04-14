@@ -191,7 +191,11 @@ func savePrivKeyToPEM(absPath string, encryptedPEMBlock *pem.Block) error {
 	if err != nil {
 		return fmt.Errorf("failed to create private key file: %v", err)
 	}
-	defer privKeyFile.Close()
+	defer func() {
+		if closeErr := privKeyFile.Close(); closeErr != nil {
+			logger.Warn(closeErr, "cannot close private key file")
+		}
+	}()
 
 	if err := pem.Encode(privKeyFile, encryptedPEMBlock); err != nil {
 		return fmt.Errorf("failed to encode private key to PEM: %v", err)
@@ -205,7 +209,11 @@ func savePubKeyToPEM(outputPath string, pemBlock *pem.Block) error {
 	if err != nil {
 		return fmt.Errorf("failed to create public key file: %v", err)
 	}
-	defer file.Close()
+	defer func() {
+		if closeErr := file.Close(); closeErr != nil {
+			logger.Warn(closeErr, "cannot close public key file")
+		}
+	}()
 
 	err = pem.Encode(file, pemBlock)
 	if err != nil {
