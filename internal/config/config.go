@@ -2,64 +2,63 @@ package config
 
 import (
 	"fmt"
+	"strings"
 
 	"brave_signer/internal/logger"
 
 	"github.com/spf13/cobra"
-	"github.com/spf13/pflag"
 	"github.com/spf13/viper"
 )
 
-type ContextKey int
-
-const ViperKey ContextKey = iota
-
-type ConfigParams struct {
-	Name string
-	Type string
-	Path string
+// GlobalConfig defines the shared configuration options.
+type GlobalConfig struct {
+	ConfigFileName string `mapstructure:"config-file-name"`
+	ConfigFileType string `mapstructure:"config-file-type"`
+	ConfigPath     string `mapstructure:"config-path"`
 }
 
-// LoadFromFile loads configuration from a file
-func LoadFromFile(params ConfigParams) (*viper.Viper, error) {
-	localViper := viper.New()
-	localViper.SetConfigName(params.Name)
-	localViper.SetConfigType(params.Type)
-	localViper.AddConfigPath(params.Path)
+// Conf holds the Viper instance after loading the config.
+var Conf *viper.Viper
 
-	err := localViper.ReadInConfig()
-	if err != nil {
+// GlobalCfg is the parsed, typed global configuration.
+var GlobalCfg GlobalConfig
+
+// LoadConfig loads configuration from the CLI flags and an optional YAML file.
+// CLI args take precedence over file settings.
+func LoadConfig(cmd *cobra.Command) error {
+	v := viper.New()
+
+	// Allow ENV vars like BRAVE_SIGNER_CONFIG_PATH
+	v.SetEnvPrefix("BRAVE_SIGNER")
+	v.SetEnvKeyReplacer(strings.NewReplacer("-", "_"))
+	v.AutomaticEnv()
+
+	rootCmd := cmd.Root()
+	if err := v.BindPFlags(rootCmd.PersistentFlags()); err != nil {
+		return fmt.Errorf("failed to bind root persistent flags: %w", err)
+	}
+
+	configFileName := v.GetString("config-file-name")
+	configFileType := v.GetString("config-file-type")
+	configPath := v.GetString("config-path")
+
+	v.SetConfigName(configFileName)
+	v.SetConfigType(configFileType)
+	v.AddConfigPath(configPath)
+
+	if err := v.ReadInConfig(); err != nil {
 		if _, ok := err.(viper.ConfigFileNotFoundError); ok {
-			logger.Info("Config file not found, using CLI params or default settings...")
+			logger.Info("Config file not found, using CLI values and defaults.")
 		} else {
-			return localViper, fmt.Errorf("found config file, but encountered an error: %v", err)
+			return fmt.Errorf("error reading config file: %w", err)
 		}
 	}
-	return localViper, nil
-}
 
-func BindFlags(cmd *cobra.Command, v *viper.Viper) error {
-	var firstErr error
+	if err := v.Unmarshal(&GlobalCfg); err != nil {
+		return fmt.Errorf("failed to unmarshal global config: %w", err)
+	}
 
-	cmd.Flags().VisitAll(func(flag *pflag.Flag) {
-		// Bind each flag to Viper
-		if err := v.BindPFlag(flag.Name, flag); err != nil {
-			if firstErr == nil { // Store the first error encountered
-				firstErr = fmt.Errorf("error binding flag '%s': %v", flag.Name, err)
-			}
-			logger.Warn(err)
-		}
+	Conf = v
 
-		// If the flag hasn't been changed by the CLI, set it from Viper
-		if !flag.Changed && v.IsSet(flag.Name) {
-			if err := cmd.Flags().Set(flag.Name, v.GetString(flag.Name)); err != nil {
-				if firstErr == nil { // Store the first error encountered
-					firstErr = fmt.Errorf("error setting flag '%s' from config: %v", flag.Name, err)
-				}
-				logger.Warn(err)
-			}
-		}
-	})
-
-	return firstErr
+	return nil
 }

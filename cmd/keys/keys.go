@@ -16,6 +16,9 @@ Features:
 - Generate secure Ed25519 key pairs.
 - Store keys in PEM files with encryption for private keys.
 `,
+	Run: func(cmd *cobra.Command, args []string) {
+		_ = cmd.Help()
+	},
 }
 
 // Init initializes keys commands

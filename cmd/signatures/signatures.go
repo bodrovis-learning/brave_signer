@@ -9,21 +9,23 @@ import (
 	"io"
 	"os"
 
+	"brave_signer/internal/config"
 	"brave_signer/internal/logger"
 
 	"github.com/spf13/cobra"
 	"golang.org/x/crypto/sha3"
 )
 
+// SignatureData holds signature details.
 type SignatureData struct {
 	Signature []byte `json:"signature"`
 	Signer    string `json:"signer"`
 }
 
-// HashFunctionMap maps algorithm names to hash constructors and corresponding crypto.Hash values
+// HashFunctionMap maps algorithm names to hash constructors and their crypto.Hash values.
 var HashFunctionMap = map[string]struct {
-	constructor func() hash.Hash
-	hash        crypto.Hash
+	Constructor func() hash.Hash
+	Hash        crypto.Hash
 }{
 	"sha3-256": {sha3.New256, crypto.SHA3_256},
 	"sha3-512": {sha3.New512, crypto.SHA3_512},
@@ -31,13 +33,19 @@ var HashFunctionMap = map[string]struct {
 	"sha512":   {sha512.New, crypto.SHA512},
 }
 
-// defaultHasherName specifies the default hash algorithm name
-var defaultHasherName = "sha3-256"
+// Set default hash algorithm.
+var (
+	defaultHasherName   = "sha3-256"
+	DefaultHashFunction = HashFunctionMap[defaultHasherName]
+)
 
-// DefaultHashFunction specifies the default hash algorithm
-var DefaultHashFunction = HashFunctionMap[defaultHasherName]
+// SignatureConfig holds the command-specific configuration for signature operations.
+type SignatureConfig struct {
+	FilePath string `mapstructure:"file-path"`
+	HashAlgo string `mapstructure:"hash-algo"`
+}
 
-// signaturesCmd represents the base command for signing operations
+// signaturesCmd represents the base command for signing operations.
 var signaturesCmd = &cobra.Command{
 	Use:   "signatures",
 	Short: "Create and verify signatures.",
@@ -47,18 +55,33 @@ Features:
 - Securely sign files to ensure their authenticity and integrity.
 - Verify signatures to confirm the origin and integrity of files.
 `,
+	// For now, simply unmarshal the config and show it.
+	Run: func(cmd *cobra.Command, args []string) {
+		// Bind the persistent flags for this command to the global Viper instance.
+		if err := config.Conf.BindPFlags(cmd.PersistentFlags()); err != nil {
+			logger.HaltOnErr(err, "failed to bind signatures flags")
+		}
+		var sigCfg SignatureConfig
+		if err := config.Conf.Unmarshal(&sigCfg); err != nil {
+			logger.HaltOnErr(err, "failed to unmarshal signatures config")
+		}
+		// Log the current configuration, or later, forward to subcommands.
+		logger.Info(fmt.Sprintf("Signatures config: file-path='%s', hash-algo='%s'", sigCfg.FilePath, sigCfg.HashAlgo))
+		// For now, just show help.
+		_ = cmd.Help()
+	},
 }
 
-// Init initializes signatures commands
+// Init initializes the signatures command and sets up its flags.
 func Init(rootCmd *cobra.Command) {
 	rootCmd.AddCommand(signaturesCmd)
 
-	// Initialize persistent flags
+	// Setup persistent flags for signatures.
 	signaturesCmd.PersistentFlags().String("file-path", "", "Path to the file that should be signed or verified")
 	signaturesCmd.PersistentFlags().String("hash-algo", defaultHasherName, "Hashing algorithm to use for signing and verification")
 }
 
-// hashFile hashes the content of a file using the specified hash function
+// hashFile reads and hashes a file’s content using the provided hasher.
 func hashFile(filePath string, hasher hash.Hash) ([]byte, error) {
 	file, err := os.Open(filePath)
 	if err != nil {
@@ -77,11 +100,11 @@ func hashFile(filePath string, hasher hash.Hash) ([]byte, error) {
 	return hasher.Sum(nil), nil
 }
 
-// getHashFunction returns the appropriate hash function based on the algorithm name
+// getHashFunction returns the appropriate hash function based on the algorithm name.
 func getHashFunction(algo string) (hash.Hash, crypto.Hash) {
 	if hf, ok := HashFunctionMap[algo]; ok {
-		return hf.constructor(), hf.hash
+		return hf.Constructor(), hf.Hash
 	}
 	logger.Warn(fmt.Errorf("unsupported hash algorithm: %s, falling back to default (%s)", algo, defaultHasherName))
-	return DefaultHashFunction.constructor(), DefaultHashFunction.hash
+	return DefaultHashFunction.Constructor(), DefaultHashFunction.Hash
 }

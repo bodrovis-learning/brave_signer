@@ -20,7 +20,7 @@ Available commands (check documentation to learn about all supported settings):
 * `signatures signfile --file PATH_TO_FILE --signer-id SIGNER_NAME_OR_ID [--priv-key priv_key.pem]` — sign the specified file using an Ed25519 private key (you'll be asked for a passphrase to decrypt the private key) and store the signature inside a .sig file named after the original file. The signature will also contain the signer's name or ID. This ID may take any form, and currently it's limited to 65535 characters.
 * `signatures verifyfile --file PATH_TO_FILE [--pub-key pub_key.pem]` — verify the digital signature of a specified file using an Ed25519 public key and the signature file. The signature file should have the same basename as the actual file and be stored in the same directory.
 
-### Config
+## Configuration
 
 All command line arguments can also be specified inside a config file. By default the script searches for a `config.yaml` file inside the current directory but it can be adjusted with the following CLI arguments:
 
@@ -37,6 +37,27 @@ signer-id: John Doe
 In this case, you don't need to provide `--signer-id` when calling `signatures signfile`.
 
 Note that CLI flags have priority over the parameters provided in the config file.
+
+### Environment variables
+
+All parameters can also be provided via environment variables. This is useful in CI/CD setups, containerized environments, or when you want to avoid hardcoding values in config files.
+
+Environment variables follow this format:
+
+```
+BRAVE_SIGNER_<PARAMETER_NAME>
+```
+
+Hyphens (-) in parameter names are replaced with underscores (_). For example `--file-path` can be set with `BRAVE_SIGNER_FILE_PATH`.
+
+### Precedence order
+
+When resolving configuration values, the priority is as follows:
+
+1. Command-line arguments
+2. Environment variables
+3. Config file (config.yaml, etc.)
+4. Default values
 
 ## License
 
