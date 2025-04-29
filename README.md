@@ -2,23 +2,33 @@
 
 > Bravely generate key pairs, sign files, and check signatures.
 
-This program, written in Go, contains a collection of tools to generate key pairs in PEM files, sign files, and verify signatures using [ed25519](https://ed25519.cr.yp.to/).
+BraveSigner is a Go-powered CLI tool that lets you generate cryptographic key pairs, sign files, and verify digital signatures using [Ed25519](https://ed25519.cr.yp.to/). It prioritizes strong encryption practices, ease of use, and flexibility.
 
-**[Find MD documentation in the /docs folder](./docs/brave_signer.md)**
+**[Full command reference in `/docs/brave_signer.md`](./docs/brave_signer.md)**
+
+---
 
 ## Usage
-
-Run it:
 
 ```
 brave_signer COMMAND FLAGS
 ```
 
-Available commands (check documentation to learn about all supported settings):
+Available commands:
 
-* `keys generate [--pub-key-path pub_key.pem] [--priv-key-path priv_key.pem]` — generate an Ed25519 key pair and store it in PEM files. The private key will be encrypted using a passphrase that you'll need to enter. AES encryption with Argon2 key derivation function is utilized.
-* `signatures signfile --file PATH_TO_FILE --signer-id SIGNER_NAME_OR_ID [--priv-key priv_key.pem]` — sign the specified file using an Ed25519 private key (you'll be asked for a passphrase to decrypt the private key) and store the signature inside a .sig file named after the original file. The signature will also contain the signer's name or ID. This ID may take any form, and currently it's limited to 65535 characters.
-* `signatures verifyfile --file PATH_TO_FILE [--pub-key pub_key.pem]` — verify the digital signature of a specified file using an Ed25519 public key and the signature file. The signature file should have the same basename as the actual file and be stored in the same directory.
+- `keys generate [--pub-key-path pub_key.pem] [--priv-key-path priv_key.pem]`  
+  Generate an Ed25519 key pair.  
+  The private key is encrypted with AES using a passphrase you enter, derived securely via Argon2.
+
+- `signatures signfile --file PATH_TO_FILE --signer-id SIGNER_NAME_OR_ID [--priv-key-path priv_key.pem]`  
+  Sign a file using your private key.  
+  A `.sig` file will be created next to the original file, containing the signature and signer ID (up to 65,535 characters).
+
+- `signatures verifyfile --file PATH_TO_FILE [--pub-key-path pub_key.pem]`  
+  Verify a file against its `.sig` using an Ed25519 public key.  
+  The `.sig` file should be named `<filename>.sig` and stored alongside the original.
+
+---
 
 ## Configuration
 

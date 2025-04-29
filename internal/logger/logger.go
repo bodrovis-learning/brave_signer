@@ -25,8 +25,8 @@ func HaltOnErr(err error, messages ...string) {
 	if len(messages) > 0 {
 		message = fmt.Sprintf("%s: %s", message, strings.Join(messages, " "))
 	}
-	errorLogger.Printf("%s: %v", message, err)
-	os.Exit(1)
+
+	errorLogger.Fatalf("%s: %v", message, err)
 }
 
 // Info logs an informational message.

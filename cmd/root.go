@@ -29,10 +29,6 @@ Features:
 - Verify file signatures to ensure authenticity and integrity.`,
 		SilenceUsage: true,
 		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
-			if err := cmd.Flags().Parse(os.Args[1:]); err != nil {
-				return fmt.Errorf("failed to parse flags manually: %w", err)
-			}
-
 			return config.LoadConfig(cmd)
 		},
 	}
