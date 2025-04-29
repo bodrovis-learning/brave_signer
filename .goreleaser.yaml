@@ -36,7 +36,7 @@ upx:
     goos: [linux, darwin, windows]
 
 archives:
-  - format: tar.gz
+  - formats: [ 'tar.gz' ]
     # this name template makes the OS and Arch compatible with the results of `uname`.
     name_template: >-
       {{ .ProjectName }}_
@@ -48,7 +48,7 @@ archives:
     # use zip for windows archives
     format_overrides:
       - goos: windows
-        format: zip
+        formats: [ 'zip' ]
     # Exclude wasm from archiving, as it does not require a standard binary archive
     # exclude:
     #   - js/wasm
